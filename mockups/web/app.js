@@ -495,7 +495,7 @@ function renderFormularioCam(view, editContext = null) {
   view.dataset.readonly = isReadOnly ? "true" : "false";
   const title = isReadOnly ? "Ver registro CAM" : isEdit ? "Editar registro CAM" : "Registro CAM";
   const subtitle = isReadOnly ? "Vista de solo lectura del registro ingresado." : isEdit ? "Formulario completo precargado para corregir el registro seleccionado." : "Formulario modular: control de ciclos, medicamentos y observaciones segun corresponda.";
-  view.innerHTML = page(title, subtitle) +
+  view.innerHTML = page(title, subtitle, adminFormBackButton()) +
     `<div class="notice">Habilite solo las secciones que aplican. Antes de guardar se solicita confirmacion.</div>
     <div class="form-section">
       <h2>Datos base</h2>
@@ -1209,8 +1209,14 @@ function recordHasObservation(row) {
   return Boolean(row.observacionCam || row.observacion || row.registro || /Observaci[oó]n|evoluci[oó]n|revision|registro/i.test(recordText(row)));
 }
 
-function renderFormularioProfesional(rol) {
-  $("view").innerHTML = page(`Formulario ${rol}`, "Seleccione un residente activo. Al aceptar, se muestra su ficha resumida antes de guardar.") +
+function renderFormularioProfesional(rol, editContext = null) {
+  const isEdit = Boolean(editContext);
+  const isReadOnly = Boolean(editContext?.readonly);
+  const title = isReadOnly ? `Ver registro ${rol}` : isEdit ? `Editar registro ${rol}` : `Formulario ${rol}`;
+  const subtitle = isReadOnly ? "Vista de solo lectura del registro ingresado." : isEdit ? "Formulario completo precargado para corregir el registro seleccionado." : "Seleccione un residente activo. Al aceptar, se muestra su ficha resumida antes de guardar.";
+  const editArg = isEdit ? editContext.index : "null";
+  $("view").dataset.readonly = isReadOnly ? "true" : "false";
+  $("view").innerHTML = page(title, subtitle, adminFormBackButton()) +
     `<div class="form-section">
       <div class="grid3">
         <div><label>Residente</label>${residentSelect("proResidente")}</div>
@@ -1293,7 +1299,10 @@ function renderFormularioProfesional(rol) {
       <label>Detalle</label>
       <textarea id="proObs" placeholder="Comentarios adicionales del cuidado o procedimiento"></textarea>
     </div>
-    <button class="btn primary" onclick="confirmProfesional('${rol}')">Guardar registro</button>`;
+    <div class="form-actions">
+      ${isReadOnly ? "" : `<button class="btn primary" onclick="confirmProfesional('${rol}', ${editArg})">${isEdit ? "Guardar cambios" : "Guardar registro"}</button>`}
+      ${isEdit ? `<button class="btn ghost" onclick="go('${editContext.returnView}')">${isReadOnly ? "Volver" : "Cancelar"}</button>` : ""}
+    </div>`;
   $("proResidente").addEventListener("change", () => {
     const resident = RESIDENTES.find((r) => r.id === Number($("proResidente").value));
     $("proFicha").innerHTML = residentProfile(resident);
@@ -1302,9 +1311,11 @@ function renderFormularioProfesional(rol) {
   bindProfessionalToggles();
   bindProfessionalMudaReason();
   bindDecimalCommaValidation(["proTemp"]);
+  if (editContext) hydrateProfessionalForm(editContext.row);
+  if (isReadOnly) lockForm($("view"));
 }
 
-function confirmProfesional(rol) {
+function confirmProfesional(rol, editIndex = null) {
   const resident = RESIDENTES.find((r) => r.id === Number($("proResidente").value));
   const fechaHora = `${$("proFecha").value || "2026-06-14"} ${$("proHora").value || "10:00"}`;
   const incluyeCiclos = $("chkProCiclos").checked || professionalCyclesActive();
@@ -1348,9 +1359,9 @@ function confirmProfesional(rol) {
     openModal("Valor no permitido", vitalError);
     return;
   }
-  openModal(`Confirmar registro ${rol}`, `Esta seguro que desea agregar este registro al residente ${resident.nombre}?`, () => {
+  openModal(`Confirmar registro ${rol}`, `Esta seguro que desea ${editIndex === null ? "agregar" : "actualizar"} este registro al residente ${resident.nombre}?`, () => {
     const registro = $("proTexto").value || "Registro sin detalle.";
-    REGISTROS_PRO.unshift({
+    const payload = {
       fecha: fechaHora,
       residente: resident.nombre,
       rol,
@@ -1376,11 +1387,16 @@ function confirmProfesional(rol) {
       mudaMotivo: hasMudaData && $("proMuda").value === "No" ? $("proMudaMotivo").value.trim() : "",
       observacionCam: hasObservationData ? $("proObs").value.trim() : "",
       editable: true
-    });
+    };
+    if (editIndex === null) {
+      REGISTROS_PRO.unshift(payload);
+    } else {
+      Object.assign(REGISTROS_PRO[editIndex], payload);
+    }
     if (incluyeCiclos) {
       CONTROLES_CICLOS.push(professionalCycleRecord(resident, rol, fechaHora));
     }
-    state.view = "misRegistrosProfesional";
+    state.view = editIndex === null ? "misRegistrosProfesional" : state.editReturnView || "misRegistrosProfesional";
     renderShell();
   });
 }
@@ -1408,10 +1424,13 @@ function bindProfessionalToggles() {
       if (checkbox.checked && chk === "chkProMudas" && $("proHoraMuda") && !$("proHoraMuda").value) {
         $("proHoraMuda").value = $("proHora")?.value || "";
       }
+      updateProfessionalToggleSummaries();
     };
     checkbox.addEventListener("change", update);
     update();
   });
+  bindProfessionalSummaryInputs();
+  updateProfessionalToggleSummaries();
 }
 
 function bindProfessionalMudaReason() {
@@ -1420,9 +1439,141 @@ function bindProfessionalMudaReason() {
   if (!select || !wrap) return;
   const update = () => {
     wrap.classList.toggle("hidden", select.value !== "No");
+    updateProfessionalToggleSummaries();
   };
   select.addEventListener("change", update);
   update();
+}
+
+function hydrateProfessionalForm(row) {
+  const [fecha = todayIso(), hora = currentTimeInput()] = String(row.fecha || "").split(" ");
+  const resident = RESIDENTES.find((item) => item.nombre === row.residente) || RESIDENTES[0];
+  const extractRow = { ...row, detalle: row.registro || row.detalle || "" };
+  const cycles = extractCamCycleFormValues(extractRow);
+  const med = extractMedicationFormValues(extractRow);
+  const posicion = extractPositionFormValues(extractRow);
+  const muda = extractMudaFormValues(extractRow);
+  const obs = extractCamObservationValue(extractRow);
+
+  setValue("proResidente", resident.id);
+  setValue("proFecha", fecha);
+  setValue("proHora", hora || "");
+  setValue("proTexto", extractProfessionalMainText(row));
+  setValue("proDiuresisResultado", row.diuresisResultado || inferDespicheResultado(row.registro, "Diuresis", row));
+  setValue("proDeposicionResultado", row.deposicionResultado || inferDespicheResultado(row.registro, "Deposición", row));
+  $("proFicha").innerHTML = residentProfile(resident);
+
+  if (cycles.hasData) {
+    setToggleChecked("chkProCiclos", true);
+    setValue("proTemp", cycles.temp);
+    setValue("proSpo2", cycles.spo2);
+    setPressureValue("proPa", cycles.pa);
+    setValue("proHgt", cycles.hgt);
+  }
+  if (med.hasData) {
+    setToggleChecked("chkProMed", true);
+    setValue("proHoraMed", med.hora);
+    setValue("proMed", med.nombre);
+  }
+  if (posicion.hasData) {
+    setToggleChecked("chkProPosicion", true);
+    setValue("proPosicion", posicion.nombre);
+    setValue("proHoraPosicion", posicion.hora);
+  }
+  if (muda.hasData) {
+    setToggleChecked("chkProMudas", true);
+    setValue("proMuda", muda.resultado);
+    setValue("proHoraMuda", muda.hora);
+    setValue("proMudaMotivo", muda.motivo);
+    bindProfessionalMudaReason();
+  }
+  if (obs) {
+    setToggleChecked("chkProObs", true);
+    setValue("proObs", obs);
+  }
+  updateProfessionalToggleSummaries();
+}
+
+function extractProfessionalMainText(row) {
+  return String(row.registro || "")
+    .replace(/Se agrega toma de ciclos profesional:\s*Temp\s+[\d,.]+\s*C,\s*Sat\s+\d+%,\s*PA\s+\d+\/\d+,\s*HGT\s+\d+\.?\s*/i, "")
+    .replace(/Diuresis:\s*(Si|No)\.?\s*/gi, "")
+    .replace(/Deposici[oó]n:\s*(Si|No)\.?\s*/gi, "")
+    .replace(/Medicamento\s+.+?\s+(?:administrado\s+)?a las\s+\d{2}:\d{2}\.?\s*/i, "")
+    .replace(/Cambio de posici[oó]n:\s*.+?\s+a las\s+\d{2}:\d{2}\.?\s*/i, "")
+    .replace(/Mudas:\s*(Si|No)\s+a las\s+\d{2}:\d{2}\.(?:\s*Motivo:\s*.+?\.)?\s*/i, "")
+    .trim();
+}
+
+function bindProfessionalSummaryInputs() {
+  [
+    "proTemp", "proSpo2", "proPaSistolica", "proPaDiastolica", "proHgt",
+    "proHoraMed", "proMed",
+    "proPosicion", "proHoraPosicion",
+    "proMuda", "proHoraMuda", "proMudaMotivo",
+    "proObs"
+  ].forEach((id) => {
+    const field = $(id);
+    if (!field || field.dataset.summaryBound) return;
+    field.dataset.summaryBound = "true";
+    field.addEventListener("input", updateProfessionalToggleSummaries);
+    field.addEventListener("change", updateProfessionalToggleSummaries);
+  });
+}
+
+function updateProfessionalToggleSummaries() {
+  const summaries = {
+    chkProCiclos: professionalCycleSummary(),
+    chkProMed: professionalMedicationSummary(),
+    chkProPosicion: professionalPositionSummary(),
+    chkProMudas: professionalMudaSummary(),
+    chkProObs: professionalObservationSummary()
+  };
+  Object.entries(summaries).forEach(([id, text]) => {
+    const summary = $(`${id}Summary`);
+    if (!summary) return;
+    summary.textContent = text;
+    summary.classList.toggle("hidden", !text);
+  });
+}
+
+function professionalCycleSummary() {
+  const pa = pressureValue("proPa");
+  const values = [
+    $("proTemp")?.value ? `Temp ${$("proTemp").value} C` : "",
+    $("proSpo2")?.value ? `Sat ${$("proSpo2").value}%` : "",
+    pa ? `PA ${pa}` : "",
+    $("proHgt")?.value ? `HGT ${$("proHgt").value}` : ""
+  ].filter(Boolean);
+  return values.join(" · ");
+}
+
+function professionalMedicationSummary() {
+  const med = $("proMed")?.value?.trim();
+  const hora = $("proHoraMed")?.value;
+  if (!med && !hora) return "";
+  return [med ? `Medicamento: ${med}` : "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
+}
+
+function professionalPositionSummary() {
+  const posicion = $("proPosicion")?.value;
+  const hora = $("proHoraPosicion")?.value;
+  if (!$("chkProPosicion")?.checked && !hora) return "";
+  return [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
+}
+
+function professionalMudaSummary() {
+  const muda = $("proMuda")?.value;
+  const hora = $("proHoraMuda")?.value;
+  const motivo = $("proMudaMotivo")?.value?.trim();
+  if (!$("chkProMudas")?.checked && !hora && !motivo) return "";
+  return [`Muda: ${muda || "-"}`, hora ? `Hora: ${hora}` : "", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ");
+}
+
+function professionalObservationSummary() {
+  const obs = $("proObs")?.value?.trim();
+  if (!obs) return "";
+  return obs.length > 120 ? `${obs.slice(0, 117)}...` : obs;
 }
 
 function bindProfessionalDateRules() {
@@ -1987,7 +2138,7 @@ function renderMisRegistrosProfesional(view) {
 }
 
 function renderFormularioNutri(view) {
-  view.innerHTML = page("Registro nutricional", "Seleccione un residente activo. Edad, peso y sexo se autocompletan desde la ficha.") +
+  view.innerHTML = page("Registro nutricional", "Seleccione un residente activo. Edad, peso y sexo se autocompletan desde la ficha.", adminFormBackButton()) +
     `<div class="form-section">
       <div class="grid3">
         <div><label>Residente</label>${residentSelect("nutriResidente")}</div>
@@ -2084,6 +2235,11 @@ function renderFormulariosAdmin(view) {
       <button onclick="go('formularioNutri')">Nutricionista</button>
     </div>
     <div class="card"><h2>Seleccione un formulario</h2><p>Desde aqui el administrador puede abrir cada formulario, revisar su estructura y simular el ingreso de registros.</p></div>`;
+}
+
+function adminFormBackButton() {
+  if (!["administrador", "administrador_respaldo"].includes(state.role)) return "";
+  return `<button class="btn ghost" onclick="go('formularios')">Volver a formularios</button>`;
 }
 
 function renderRegistrosUsuarios(view) {
@@ -2232,6 +2388,11 @@ function renderRecordForm(source, index, returnView = "registros", requireEditab
   if (source === "cam") {
     state.editReturnView = returnView;
     renderFormularioCam($("view"), { row, index, returnView, readonly: readOnly });
+    return;
+  }
+  if (source === "pro") {
+    state.editReturnView = returnView;
+    renderFormularioProfesional(row.rol || "Enfermero", { row, index, returnView, readonly: readOnly });
     return;
   }
   state.editReturnView = returnView;
