@@ -273,7 +273,7 @@ function residentSearchPanel() {
         <button class="btn primary" id="acceptResidentSearch">Aceptar</button>
       </div>
     </div>
-    <div class="notice">Al aceptar se actualizan la ficha, bitacora ejecutiva de los ultimos 15 dias, alertas y graficas del residente seleccionado.</div>
+    <div class="notice">Al aceptar se actualizan la ficha, bitacora ejecutiva de los ultimos 7 dias, alertas y graficas del residente seleccionado.</div>
   </div>`;
 }
 
@@ -489,8 +489,13 @@ function normalizeSearch(value) {
     .trim();
 }
 
-function renderFormularioCam(view) {
-  view.innerHTML = page("Registro CAM", "Formulario modular: control de ciclos, medicamentos y observaciones segun corresponda.") +
+function renderFormularioCam(view, editContext = null) {
+  const isEdit = Boolean(editContext);
+  const isReadOnly = Boolean(editContext?.readonly);
+  view.dataset.readonly = isReadOnly ? "true" : "false";
+  const title = isReadOnly ? "Ver registro CAM" : isEdit ? "Editar registro CAM" : "Registro CAM";
+  const subtitle = isReadOnly ? "Vista de solo lectura del registro ingresado." : isEdit ? "Formulario completo precargado para corregir el registro seleccionado." : "Formulario modular: control de ciclos, medicamentos y observaciones segun corresponda.";
+  view.innerHTML = page(title, subtitle) +
     `<div class="notice">Habilite solo las secciones que aplican. Antes de guardar se solicita confirmacion.</div>
     <div class="form-section">
       <h2>Datos base</h2>
@@ -505,20 +510,23 @@ function renderFormularioCam(view) {
     </div>
     <div class="form-section">
       <h2>Diuresis / Deposición</h2>
-      <div class="grid3">
-        <div><label>Tipo</label><select id="camDespicheTipo"><option>Diuresis</option><option>Deposición</option></select></div>
-        <div><label>Resultado</label><select id="camDespicheResultado"><option>Si</option><option>No</option></select></div>
+      <div class="grid2">
+        <div><label>Diuresis (orina)</label><select id="camDiuresisResultado"><option>Si</option><option>No</option></select></div>
+        <div><label>Deposición (heces fecales)</label><select id="camDeposicionResultado"><option>Si</option><option>No</option></select></div>
       </div>
     </div>
     ${toggle("chkCiclos", "Registrar control de ciclos")}
     <div id="secCiclos" class="form-section hidden">
       <h2>Control de ciclos</h2>
       <div class="grid3">
-        <div><label>Temperatura C</label><input id="camTemp" placeholder="36,8"></div>
-        <div><label>Saturacion %</label><input id="camSpo2" type="number" placeholder="96"></div>
-        <div><label>Presion arterial mmHg</label><input id="camPa" placeholder="125/80"></div>
-        <div><label>HGT / Glucosa mg/dL</label><input id="camHgt" type="number" placeholder="110"></div>
+        <div><label>Temperatura C</label><input id="camTemp" inputmode="decimal" placeholder="36,8"></div>
+        <div><label>Saturación %</label><input id="camSpo2" type="number" min="0" max="100" step="1" placeholder="96"></div>
+        <div><label>Presión arterial mmHg</label>${pressureInputs("camPa")}</div>
+        <div><label>HGT / Glucosa mg/dL</label><input id="camHgt" type="number" min="20" max="1000" step="1" placeholder="110"></div>
       </div>
+      ${isReadOnly ? "" : `<div class="form-actions compact-actions">
+        <button class="btn ghost" type="button" onclick="clearCamCycles()">Limpiar datos</button>
+      </div>`}
     </div>
     ${toggle("chkMed", "Administracion de medicamentos")}
     <div id="secMed" class="form-section hidden">
@@ -528,30 +536,339 @@ function renderFormularioCam(view) {
         <div><label>Nombre medicamento</label><input id="camMed" placeholder="Ej: Losartan 50 mg"></div>
       </div>
     </div>
+    ${toggle("chkPosicion", "Cambio de Posición")}
+    <div id="secPosicion" class="form-section hidden">
+      <h2>Cambio de Posición</h2>
+      <div class="grid2 position-layout">
+        <div>
+          <label>Posición registrada</label>
+          <select id="camPosicion">
+            <option>Decúbito supino (boca arriba)</option>
+            <option>Decúbito lateral derecho</option>
+            <option>Decúbito lateral izquierdo</option>
+          </select>
+          <label>Hora del cambio de posición</label>
+          <input id="camHoraPosicion" type="time">
+        </div>
+        <div class="position-reference">
+          <img src="./assets/cambios-posicion.png" alt="Referencia de cambios de posición">
+        </div>
+      </div>
+    </div>
+    ${toggle("chkMudas", "Mudas")}
+    <div id="secMudas" class="form-section hidden">
+      <h2>Mudas</h2>
+      <div class="grid2">
+        <div>
+          <label>¿Se realizó muda?</label>
+          <select id="camMuda">
+            <option>Si</option>
+            <option>No</option>
+          </select>
+        </div>
+        <div><label>Hora de la muda</label><input id="camHoraMuda" type="time"></div>
+      </div>
+      <div id="camMudaMotivoWrap" class="hidden">
+        <label>Motivo por el cual no se realizó muda</label>
+        <textarea id="camMudaMotivo" placeholder="Ej: no aplica, residente autovalente, no requiere cambio de muda"></textarea>
+      </div>
+    </div>
     ${toggle("chkObs", "Agregar observaciones")}
     <div id="secObs" class="form-section hidden">
       <h2>Observaciones</h2>
       <label>Detalle</label>
       <textarea id="camObs" placeholder="Cambios conductuales, orina de mal olor, salidas, accidentes o urgencias medicas"></textarea>
     </div>
-    <button class="btn primary" onclick="confirmCam()">Guardar registro</button>`;
+    ${isReadOnly ? "" : `<button class="btn primary" onclick="confirmCam(${isEdit ? editContext.index : "null"})">${isEdit ? "Guardar cambios" : "Guardar registro"}</button>`}
+    ${isEdit ? `<button class="btn ghost" onclick="go('${editContext.returnView}')">${isReadOnly ? "Volver" : "Cancelar"}</button>` : ""}`;
   bindToggles();
   bindCamDateRules();
+  bindMudaReason();
   bindDecimalCommaValidation(["camTemp"]);
+  if (editContext) hydrateCamForm(editContext.row);
+  if (isReadOnly) lockForm(view);
 }
 
 function toggle(id, label) {
-  return `<label class="toggle-row"><input type="checkbox" id="${id}"> ${label}</label>`;
+  const details = {
+    chkCiclos: "Temperatura, saturación, presión y HGT.",
+    chkMed: "Hora de administración y remedio suministrado.",
+    chkPosicion: "Decúbito supino o laterales con horario.",
+    chkMudas: "Registro Si/No y horario de muda.",
+    chkObs: "Comentarios adicionales del cuidado.",
+    chkProCiclos: "Temperatura, saturación, presión y HGT.",
+    chkProMed: "Hora de administración y remedio suministrado.",
+    chkProPosicion: "Decúbito supino o laterales con horario.",
+    chkProMudas: "Registro Si/No y horario de muda.",
+    chkProObs: "Comentarios adicionales del cuidado."
+  };
+  return `<label class="toggle-card" for="${id}">
+    <input type="checkbox" id="${id}">
+    <span class="toggle-card-main">
+      <strong>${label}</strong>
+      <small>${details[id] || "Haga clic para desplegar el formulario."}</small>
+      <span class="toggle-card-summary" id="${id}Summary"></span>
+    </span>
+    <span class="toggle-card-mark" aria-hidden="true">+</span>
+  </label>`;
 }
 
 function bindToggles() {
-  [["chkCiclos", "secCiclos"], ["chkMed", "secMed"], ["chkObs", "secObs"]].forEach(([chk, sec]) => {
+  [["chkCiclos", "secCiclos"], ["chkMed", "secMed"], ["chkPosicion", "secPosicion"], ["chkMudas", "secMudas"], ["chkObs", "secObs"]].forEach(([chk, sec]) => {
     const checkbox = $(chk);
     const section = $(sec);
     if (checkbox && section) {
-      checkbox.addEventListener("change", () => section.classList.toggle("hidden", !checkbox.checked));
+      const card = checkbox.closest(".toggle-card");
+      const mark = card?.querySelector(".toggle-card-mark");
+      const updateToggle = () => {
+        section.classList.toggle("hidden", !checkbox.checked);
+        card?.classList.toggle("active", checkbox.checked);
+        if (mark) mark.textContent = checkbox.checked ? "✓" : "+";
+        if (checkbox.checked && chk === "chkPosicion" && $("camHoraPosicion") && !$("camHoraPosicion").value) {
+          $("camHoraPosicion").value = $("camHora")?.value || "";
+        }
+        if (checkbox.checked && chk === "chkMudas" && $("camHoraMuda") && !$("camHoraMuda").value) {
+          $("camHoraMuda").value = $("camHora")?.value || "";
+        }
+        updateCamToggleSummaries();
+      };
+      checkbox.addEventListener("change", updateToggle);
+      updateToggle();
     }
   });
+  bindCamSummaryInputs();
+  updateCamToggleSummaries();
+}
+
+function bindMudaReason() {
+  const select = $("camMuda");
+  const wrap = $("camMudaMotivoWrap");
+  if (!select || !wrap) return;
+  const update = () => {
+    wrap.classList.toggle("hidden", select.value !== "No");
+    updateCamToggleSummaries();
+  };
+  select.addEventListener("change", update);
+  update();
+}
+
+function hydrateCamForm(row) {
+  const [fecha = todayIso(), hora = currentTimeInput()] = String(row.fecha || "").split(" ");
+  const resident = RESIDENTES.find((item) => item.nombre === row.residente) || RESIDENTES[0];
+  const cycles = extractCamCycleFormValues(row);
+  const med = extractMedicationFormValues(row);
+  const posicion = extractPositionFormValues(row);
+  const muda = extractMudaFormValues(row);
+  const obs = extractCamObservationValue(row);
+
+  setValue("camCuidadora", row.cuidadora || "");
+  setValue("camTurno", row.turno || "Dia");
+  setValue("camFecha", fecha);
+  setValue("camHora", hora || "");
+  setValue("camResidente", resident.id);
+  setValue("camDiuresisResultado", row.diuresisResultado || inferDespicheResultado(row.detalle, "Diuresis", row));
+  setValue("camDeposicionResultado", row.deposicionResultado || inferDespicheResultado(row.detalle, "Deposición", row));
+
+  if (cycles.hasData) {
+    setToggleChecked("chkCiclos", true);
+    setValue("camTemp", cycles.temp);
+    setValue("camSpo2", cycles.spo2);
+    setPressureValue("camPa", cycles.pa);
+    setValue("camHgt", cycles.hgt);
+  }
+  if (med.hasData) {
+    setToggleChecked("chkMed", true);
+    setValue("camHoraMed", med.hora);
+    setValue("camMed", med.nombre);
+  }
+  if (posicion.hasData) {
+    setToggleChecked("chkPosicion", true);
+    setValue("camPosicion", posicion.nombre);
+    setValue("camHoraPosicion", posicion.hora);
+  }
+  if (muda.hasData) {
+    setToggleChecked("chkMudas", true);
+    setValue("camMuda", muda.resultado);
+    setValue("camHoraMuda", muda.hora);
+    setValue("camMudaMotivo", muda.motivo);
+    bindMudaReason();
+  }
+  if (obs) {
+    setToggleChecked("chkObs", true);
+    setValue("camObs", obs);
+  }
+  updateCamToggleSummaries();
+}
+
+function setToggleChecked(id, checked) {
+  const checkbox = $(id);
+  if (!checkbox) return;
+  checkbox.checked = checked;
+  checkbox.dispatchEvent(new Event("change"));
+}
+
+function setValue(id, value) {
+  const field = $(id);
+  if (field) field.value = value ?? "";
+}
+
+function setPressureValue(prefix, value) {
+  const pressure = parsePressure(value);
+  setValue(`${prefix}Sistolica`, pressure.sistolica ?? "");
+  setValue(`${prefix}Diastolica`, pressure.diastolica ?? "");
+}
+
+function pressureValue(prefix) {
+  const sistolica = $(`${prefix}Sistolica`)?.value;
+  const diastolica = $(`${prefix}Diastolica`)?.value;
+  return sistolica && diastolica ? `${sistolica}/${diastolica}` : "";
+}
+
+function lockForm(root) {
+  root.querySelectorAll(".form-section input, .form-section select, .form-section textarea, .toggle-card input").forEach((field) => {
+    if (field.tagName === "SELECT" || field.type === "checkbox") {
+      field.disabled = true;
+    } else {
+      field.readOnly = true;
+    }
+  });
+}
+
+function extractCamCycleFormValues(row) {
+  const text = String(row.detalle || "");
+  return {
+    temp: row.cicloTemp || regexValue(text, /Temp\s+([\d,.]+)/i),
+    spo2: row.cicloSpo2 || regexValue(text, /Sat\s+(\d+)/i),
+    pa: row.cicloPa || regexValue(text, /PA\s+(\d+\/\d+)/i),
+    hgt: row.cicloHgt || regexValue(text, /HGT\s+(\d+)/i),
+    get hasData() {
+      return Boolean(this.temp || this.spo2 || this.pa || this.hgt);
+    }
+  };
+}
+
+function extractMedicationFormValues(row) {
+  const text = String(row.detalle || "");
+  const nombre = row.medicamento || regexValue(text, /Medicamento\s+(.+?)\s+(?:administrado\s+)?a las\s+\d{2}:\d{2}/i);
+  const hora = row.horaMedicamento || regexValue(text, /Medicamento\s+.+?\s+(?:administrado\s+)?a las\s+(\d{2}:\d{2})/i);
+  return { nombre, hora, hasData: Boolean(nombre || hora) };
+}
+
+function extractPositionFormValues(row) {
+  const text = String(row.detalle || "");
+  const nombre = row.posicion || regexValue(text, /Cambio de posici[oó]n:\s*(.+?)\s+a las\s+\d{2}:\d{2}/i);
+  const hora = row.horaPosicion || regexValue(text, /Cambio de posici[oó]n:\s*.+?\s+a las\s+(\d{2}:\d{2})/i);
+  return { nombre, hora, hasData: Boolean(nombre || hora) };
+}
+
+function extractMudaFormValues(row) {
+  const text = String(row.detalle || "");
+  const resultado = row.mudaResultado || regexValue(text, /Mudas:\s*(Si|No)/i) || "Si";
+  const hora = row.horaMuda || regexValue(text, /Mudas:\s*(?:Si|No)\s+a las\s+(\d{2}:\d{2})/i);
+  const motivo = row.mudaMotivo || regexValue(text, /Motivo:\s*(.+?)(?:\.|$)/i);
+  return { resultado: normalizeSiNo(resultado), hora, motivo, hasData: Boolean(row.mudaResultado || row.horaMuda || row.mudaMotivo || /Mudas:/i.test(text)) };
+}
+
+function extractCamObservationValue(row) {
+  const text = String(row.detalle || "");
+  if (row.observacionCam) return row.observacionCam;
+  const prefixed = regexValue(text, /Observaci[oó]n:\s*(.+)$/i);
+  if (prefixed) return prefixed.trim();
+  if (!/Observaci[oó]n/i.test(String(row.tipo || ""))) return "";
+  return text
+    .replace(/Control registrado\.\s*Temp\s+[\d,.]+\s*C,\s*Sat\s+\d+%,\s*PA\s+\d+\/\d+,\s*HGT\s+\d+\.?\s*/i, "")
+    .replace(/Diuresis:\s*(Si|No)\.?\s*/gi, "")
+    .replace(/Deposici[oó]n:\s*(Si|No)\.?\s*/gi, "")
+    .replace(/Medicamento\s+.+?\s+(?:administrado\s+)?a las\s+\d{2}:\d{2}\.?\s*/i, "")
+    .replace(/Cambio de posici[oó]n:\s*.+?\s+a las\s+\d{2}:\d{2}\.?\s*/i, "")
+    .replace(/Mudas:\s*(Si|No)\s+a las\s+\d{2}:\d{2}\.(?:\s*Motivo:\s*.+?\.)?\s*/i, "")
+    .replace(/^Control registrado\.\s*/i, "")
+    .trim();
+}
+
+function regexValue(text, pattern) {
+  const match = String(text || "").match(pattern);
+  return match ? String(match[1]).trim() : "";
+}
+
+function clearCamCycles() {
+  if ($("view")?.dataset.readonly === "true") return;
+  ["camTemp", "camSpo2", "camPaSistolica", "camPaDiastolica", "camHgt"].forEach((id) => {
+    const input = $(id);
+    if (input) input.value = "";
+  });
+  updateCamToggleSummaries();
+}
+
+function bindCamSummaryInputs() {
+  [
+    "camTemp", "camSpo2", "camPaSistolica", "camPaDiastolica", "camHgt",
+    "camHoraMed", "camMed",
+    "camPosicion", "camHoraPosicion",
+    "camMuda", "camHoraMuda", "camMudaMotivo",
+    "camObs"
+  ].forEach((id) => {
+    const field = $(id);
+    if (!field || field.dataset.summaryBound) return;
+    field.dataset.summaryBound = "true";
+    field.addEventListener("input", updateCamToggleSummaries);
+    field.addEventListener("change", updateCamToggleSummaries);
+  });
+}
+
+function updateCamToggleSummaries() {
+  const summaries = {
+    chkCiclos: camCycleSummary(),
+    chkMed: camMedicationSummary(),
+    chkPosicion: camPositionSummary(),
+    chkMudas: camMudaSummary(),
+    chkObs: camObservationSummary()
+  };
+  Object.entries(summaries).forEach(([id, text]) => {
+    const summary = $(`${id}Summary`);
+    if (!summary) return;
+    summary.textContent = text;
+    summary.classList.toggle("hidden", !text);
+  });
+}
+
+function camCycleSummary() {
+  const pa = pressureValue("camPa");
+  const values = [
+    $("camTemp")?.value ? `Temp ${$("camTemp").value} C` : "",
+    $("camSpo2")?.value ? `Sat ${$("camSpo2").value}%` : "",
+    pa ? `PA ${pa}` : "",
+    $("camHgt")?.value ? `HGT ${$("camHgt").value}` : ""
+  ].filter(Boolean);
+  return values.join(" · ");
+}
+
+function camMedicationSummary() {
+  const med = $("camMed")?.value?.trim();
+  const hora = $("camHoraMed")?.value;
+  if (!med && !hora) return "";
+  return [med ? `Medicamento: ${med}` : "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
+}
+
+function camPositionSummary() {
+  const posicion = $("camPosicion")?.value;
+  const hora = $("camHoraPosicion")?.value;
+  if (!$("chkPosicion")?.checked && !hora) return "";
+  return [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
+}
+
+function camMudaSummary() {
+  const muda = $("camMuda")?.value;
+  const hora = $("camHoraMuda")?.value;
+  const motivo = $("camMudaMotivo")?.value?.trim();
+  if (!$("chkMudas")?.checked && !hora && !motivo) return "";
+  return [`Muda: ${muda || "-"}`, hora ? `Hora: ${hora}` : "", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ");
+}
+
+function camObservationSummary() {
+  const obs = $("camObs")?.value?.trim();
+  if (!obs) return "";
+  return obs.length > 120 ? `${obs.slice(0, 117)}...` : obs;
 }
 
 function bindCamDateRules() {
@@ -566,31 +883,21 @@ function bindCamDateRules() {
       fecha.min = today;
       fecha.max = today;
       if (!fecha.value || fecha.value !== today) fecha.value = today;
-      hora.min = "08:00";
-      hora.max = "20:00";
-      if (!hora.value || hora.value < "08:00" || hora.value > "20:00") hora.value = "08:00";
+      hora.removeAttribute("min");
+      hora.removeAttribute("max");
+      if (!hora.value) hora.value = currentTimeInput();
     } else {
       fecha.min = today;
       fecha.max = tomorrow;
       if (!fecha.value || fecha.value < today || fecha.value > tomorrow) fecha.value = today;
-      if (fecha.value === today) {
-        hora.min = "20:00";
-        hora.max = "23:59";
-        if (!hora.value || hora.value < "20:00") hora.value = "20:00";
-      } else {
-        hora.min = "00:00";
-        hora.max = "08:00";
-        if (!hora.value || hora.value > "08:00") hora.value = "08:00";
-      }
+      hora.removeAttribute("min");
+      hora.removeAttribute("max");
+      if (!hora.value) hora.value = currentTimeInput();
     }
   };
   turno.addEventListener("change", apply);
   fecha.addEventListener("change", apply);
   fecha.addEventListener("change", () => {
-    const error = validateCamDateTime();
-    if (error) openModal("Fecha u hora no permitida", error);
-  });
-  hora.addEventListener("change", () => {
     const error = validateCamDateTime();
     if (error) openModal("Fecha u hora no permitida", error);
   });
@@ -606,12 +913,9 @@ function validateCamDateTime() {
   if (!fecha || !hora) return "Debe seleccionar fecha y hora.";
   if (turno === "Dia") {
     if (fecha !== today) return "El turno dia solo permite registrar controles del dia actual.";
-    if (hora < "08:00" || hora > "20:00") return "El turno dia solo permite horarios entre 08:00 y 20:00.";
     return "";
   }
   if (fecha !== today && fecha !== tomorrow) return "El turno noche solo permite seleccionar hoy o manana.";
-  if (fecha === today && hora < "20:00") return "Para turno noche con fecha de hoy, el horario debe ser desde las 20:00.";
-  if (fecha === tomorrow && hora > "08:00") return "Para turno noche con fecha de manana, el horario debe ser hasta las 08:00.";
   return "";
 }
 
@@ -619,23 +923,39 @@ function residentSelect(id) {
   return `<select id="${id}">${RESIDENTES.map((r) => `<option value="${r.id}">${r.nombre}</option>`).join("")}</select>`;
 }
 
-function confirmCam() {
+function pressureInputs(prefix) {
+  return `<div class="pressure-inputs">
+    <input id="${prefix}Sistolica" type="number" min="40" max="260" step="1" placeholder="125" aria-label="Presión sistólica">
+    <span>/</span>
+    <input id="${prefix}Diastolica" type="number" min="20" max="180" step="1" placeholder="80" aria-label="Presión diastólica">
+  </div>
+  <small class="field-help">Izquierda: presión sistólica. Derecha: presión diastólica.</small>`;
+}
+
+function confirmCam(editIndex = null) {
   const faltantes = [];
+  const hasCycleData = camCyclesActive();
+  const hasMedicationData = camMedicationActive();
+  const hasPositionData = camPositionActive();
+  const hasMudaData = camMudaActive();
+  const hasObservationData = camObservationActive();
   if (!$("camCuidadora").value.trim()) faltantes.push("nombre de la cuidadora");
   if (!$("camFecha").value) faltantes.push("fecha");
   if (!$("camHora").value) faltantes.push("hora");
   if (!$("camResidente").value) faltantes.push("residente");
-  if (!$("chkCiclos").checked && !$("chkMed").checked && !$("chkObs").checked) {
-    faltantes.push("control de ciclos, administracion de medicamentos u observacion");
-  }
-  if ($("chkCiclos").checked) {
+  if ($("chkCiclos").checked || hasCycleData) {
     if (!$("camTemp").value) faltantes.push("temperatura");
     if (!$("camSpo2").value) faltantes.push("saturacion");
-    if (!$("camPa").value) faltantes.push("presion arterial");
+    if (!pressureValue("camPa")) faltantes.push("presion arterial sistolica y diastolica");
     if (!$("camHgt").value) faltantes.push("HGT / glucosa");
   }
-  if ($("chkMed").checked && !$("camMed").value.trim()) faltantes.push("nombre medicamento");
-  if ($("chkObs").checked && !$("camObs").value.trim()) faltantes.push("detalle de observacion");
+  if (hasMedicationData && !$("camMed").value.trim()) faltantes.push("nombre medicamento");
+  if (hasPositionData && !$("camPosicion").value) faltantes.push("cambio de posicion");
+  if (hasPositionData && !$("camHoraPosicion").value) faltantes.push("hora del cambio de posicion");
+  if (hasMudaData && !$("camMuda").value) faltantes.push("mudas");
+  if (hasMudaData && !$("camHoraMuda").value) faltantes.push("hora de muda");
+  if (hasMudaData && $("camMuda").value === "No" && !$("camMudaMotivo").value.trim()) faltantes.push("motivo por el cual no se realizo muda");
+  if (hasObservationData && !$("camObs").value.trim()) faltantes.push("detalle de observacion");
   if (faltantes.length) {
     openModal("Campos obligatorios", `Debe completar: ${faltantes.join(", ")}.`);
     return;
@@ -645,53 +965,110 @@ function confirmCam() {
     openModal("Separador decimal", decimalError);
     return;
   }
-  const dateError = validateCamDateTime();
+  const vitalError = hasCycleData ? validateCycleNumbers({
+    tempId: "camTemp",
+    spo2Id: "camSpo2",
+    pressurePrefix: "camPa",
+    hgtId: "camHgt"
+  }) : "";
+  if (vitalError) {
+    openModal("Valor no permitido", vitalError);
+    return;
+  }
+  const dateError = editIndex === null ? validateCamDateTime() : "";
   if (dateError) {
     openModal("Fecha u hora no permitida", dateError);
     return;
   }
   const resident = RESIDENTES.find((r) => r.id === Number($("camResidente").value));
-  openModal("Confirmar registro CAM", `Esta seguro que desea agregar este registro al residente ${resident.nombre}?`, () => {
-    REGISTROS_CAM.unshift({
+  openModal(editIndex === null ? "Confirmar registro CAM" : "Confirmar cambios CAM", editIndex === null ? `Esta seguro que desea agregar este registro al residente ${resident.nombre}?` : `Esta seguro que desea guardar los cambios del registro de ${resident.nombre}?`, () => {
+    const registro = {
       fecha: `${$("camFecha").value} ${$("camHora").value}`,
       residente: resident.nombre,
       usuario: "cuidadoras@hogarantu.cl",
       turno: $("camTurno").value,
       cuidadora: $("camCuidadora").value.trim(),
       tipo: camTipo(),
-      despicheTipo: $("camDespicheTipo").value,
-      despicheResultado: $("camDespicheResultado").value,
-      medicamento: $("chkMed").checked ? ($("camMed").value || "Medicamento sin nombre") : "",
-      horaMedicamento: $("chkMed").checked ? ($("camHoraMed").value || "") : "",
+      despicheTipo: "Diuresis / Deposición",
+      despicheResultado: despicheHasNo({
+        diuresisResultado: $("camDiuresisResultado").value,
+        deposicionResultado: $("camDeposicionResultado").value
+      }) ? "No" : "Si",
+      diuresisResultado: $("camDiuresisResultado").value,
+      deposicionResultado: $("camDeposicionResultado").value,
+      cicloTemp: hasCycleData ? $("camTemp").value : "",
+      cicloSpo2: hasCycleData ? $("camSpo2").value : "",
+      cicloPa: hasCycleData ? pressureValue("camPa") : "",
+      cicloHgt: hasCycleData ? $("camHgt").value : "",
+      medicamento: hasMedicationData ? ($("camMed").value || "Medicamento sin nombre") : "",
+      horaMedicamento: hasMedicationData ? ($("camHoraMed").value || "") : "",
+      posicion: hasPositionData ? $("camPosicion").value : "",
+      horaPosicion: hasPositionData ? $("camHoraPosicion").value : "",
+      mudaResultado: hasMudaData ? $("camMuda").value : "",
+      horaMuda: hasMudaData ? $("camHoraMuda").value : "",
+      mudaMotivo: hasMudaData && $("camMuda").value === "No" ? $("camMudaMotivo").value.trim() : "",
+      observacionCam: hasObservationData ? $("camObs").value.trim() : "",
       detalle: camDetalle(),
       editable: true
-    });
-    state.view = "misRegistrosCam";
+    };
+    if (editIndex === null) {
+      REGISTROS_CAM.unshift(registro);
+    } else {
+      REGISTROS_CAM[editIndex] = { ...REGISTROS_CAM[editIndex], ...registro };
+    }
+    state.view = editIndex === null ? "misRegistrosCam" : (state.editReturnView || "misRegistrosCam");
     renderShell();
   });
 }
 
+function camCyclesActive() {
+  return ["camTemp", "camSpo2", "camPaSistolica", "camPaDiastolica", "camHgt"].some((id) => Boolean($(id)?.value));
+}
+
+function camMedicationActive() {
+  return Boolean($("chkMed")?.checked || $("camMed")?.value?.trim() || $("camHoraMed")?.value);
+}
+
+function camPositionActive() {
+  return Boolean($("chkPosicion")?.checked || $("camHoraPosicion")?.value);
+}
+
+function camMudaActive() {
+  return Boolean($("chkMudas")?.checked || $("camHoraMuda")?.value || $("camMudaMotivo")?.value?.trim());
+}
+
+function camObservationActive() {
+  return Boolean($("chkObs")?.checked || $("camObs")?.value?.trim());
+}
+
 function camTipo() {
   const parts = [];
-  if ($("chkCiclos").checked) parts.push("Control de ciclos");
-  parts.push("Despiche");
-  if ($("chkMed").checked) parts.push("Medicamento");
-  if ($("chkObs").checked) parts.push("Observacion");
+  if ($("chkCiclos").checked || camCyclesActive()) parts.push("Control de ciclos");
+  parts.push("Diuresis/Deposición");
+  if (camMedicationActive()) parts.push("Medicamento");
+  if (camPositionActive()) parts.push("Cambio de posición");
+  if (camMudaActive()) parts.push("Mudas");
+  if (camObservationActive()) parts.push("Observacion");
   return parts.length ? parts.join(" + ") : "Registro CAM";
 }
 
 function camDetalle() {
   const parts = [];
-  if ($("chkCiclos").checked) parts.push(`Temp ${$("camTemp").value || "-"} C, Sat ${$("camSpo2").value || "-"}%, PA ${$("camPa").value || "-"}, HGT ${$("camHgt").value || "-"}.`);
-  parts.push(`${$("camDespicheTipo").value}: ${$("camDespicheResultado").value}.`);
-  if ($("chkMed").checked) parts.push(`Medicamento ${$("camMed").value || "sin nombre"} a las ${$("camHoraMed").value || "--:--"}.`);
-  if ($("chkObs").checked) parts.push($("camObs").value || "Sin detalle de observacion.");
+  if ($("chkCiclos").checked || camCyclesActive()) parts.push(`Control registrado. Temp ${$("camTemp").value || "-"} C, Sat ${$("camSpo2").value || "-"}%, PA ${pressureValue("camPa") || "-"}, HGT ${$("camHgt").value || "-"}.`);
+  parts.push(`Diuresis: ${$("camDiuresisResultado").value}. Deposición: ${$("camDeposicionResultado").value}.`);
+  if (camMedicationActive()) parts.push(`Medicamento ${$("camMed").value || "sin nombre"} a las ${$("camHoraMed").value || "--:--"}.`);
+  if (camPositionActive()) parts.push(`Cambio de posición: ${$("camPosicion").value} a las ${$("camHoraPosicion").value || "--:--"}.`);
+  if (camMudaActive()) {
+    const motivo = $("camMuda").value === "No" ? ` Motivo: ${$("camMudaMotivo").value.trim()}.` : "";
+    parts.push(`Mudas: ${$("camMuda").value} a las ${$("camHoraMuda").value || "--:--"}.${motivo}`);
+  }
+  if (camObservationActive()) parts.push($("camObs").value || "Sin detalle de observacion.");
   return parts.join(" ");
 }
 
 function renderMisRegistrosCam(view) {
   view.innerHTML = page("Mis registros CAM", "Los registros pueden editarse solo hasta 16 horas despues de su ingreso.") +
-    registrosTable(REGISTROS_CAM, ["Fecha", "Residente", "Usuario", "Turno", "Cuidadora", "Tipo", "Detalle"], "cam", "misRegistrosCam");
+    registrosTable(REGISTROS_CAM, ["Fecha", "Residente", "Usuario", "Turno", "Cuidadora", "Detalle"], "cam", "misRegistrosCam");
 }
 
 function registrosTable(rows, headers, source = null, returnView = "registros") {
@@ -704,17 +1081,19 @@ function registrosTable(rows, headers, source = null, returnView = "registros") 
     <tbody>${sortedRows.map((r) => `<tr>
       ${headers.map((h) => `<td>${valueForHeader(r, h)}</td>`).join("")}
       <td>${r.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
-      <td>${recordEditButton(r, source, returnView)}</td>
+      <td>${recordActionButtons(r, source, returnView)}</td>
     </tr>`).join("")}</tbody>
   </table></div>`;
 }
 
-function recordEditButton(row, source, returnView) {
-  if (!row.editable) return `<button class="btn ghost" disabled>No editable</button>`;
-  if (!source) return `<button class="btn ghost" disabled>Editar</button>`;
+function recordActionButtons(row, source, returnView) {
+  if (!source) return `<button class="btn ghost" disabled>Ver</button>`;
   const index = recordArray(source).indexOf(row);
-  if (index < 0) return `<button class="btn ghost" disabled>Editar</button>`;
-  return `<button class="btn secondary" onclick="startRecordEdit('${source}', ${index}, '${returnView}', true)">Editar</button>`;
+  if (index < 0) return `<button class="btn ghost" disabled>Ver</button>`;
+  return `<div class="action-stack">
+    <button class="btn ghost" onclick="startRecordView('${source}', ${index}, '${returnView}')">Ver</button>
+    ${row.editable ? `<button class="btn secondary" onclick="startRecordEdit('${source}', ${index}, '${returnView}', true)">Editar</button>` : `<button class="btn ghost" disabled>No editable</button>`}
+  </div>`;
 }
 
 function valueForHeader(row, header) {
@@ -732,7 +1111,102 @@ function valueForHeader(row, header) {
     Observacion: "observacion"
   }[header];
   const value = row[key] || "";
+  if (header === "Tipo") return displayRegistroTipo(value);
+  if (["Detalle", "Registro", "Observacion"].includes(header)) return recordChecklistDetail(row);
   return header === "IMC" ? formatDecimalText(value) : value;
+}
+
+function displayRegistroTipo(tipo) {
+  return String(tipo || "")
+    .replace(/\bDespiche\b/g, "Diuresis/Deposición")
+    .replace(/Diuresis\s*\/\s*Deposici[oó]n/g, "Diuresis/Deposición");
+}
+
+function recordChecklistDetail(row) {
+  const items = [
+    ["Diuresis", recordHasDiuresis(row)],
+    ["Deposición", recordHasDeposicion(row)],
+    ["Control Registrado", recordHasCycles(row)],
+    ["Medicamento", recordHasMedication(row)],
+    ["Posición", recordHasPosition(row)],
+    ["Mudas", recordHasMudas(row)],
+    ["Observación", recordHasObservation(row)]
+  ];
+  return `<div class="record-checklist">${items.map(([label, ok]) => `<span class="${ok ? "ok" : "no"}"><b>${ok ? "✓" : "✕"}</b> ${label}</span>`).join("")}</div>`;
+}
+
+function camChecklistDetail(row) {
+  return recordChecklistDetail(row);
+}
+
+function camDisplayDetail(row) {
+  if (!row || !row.detalle) return "";
+  if (!isCamLikeRecord(row)) return row.detalle;
+  const diuresis = row.diuresisResultado || inferDespicheResultado(row.detalle, "Diuresis", row);
+  const deposicion = row.deposicionResultado || inferDespicheResultado(row.detalle, "Deposición", row);
+  const withCycles = ensureCamCycleText(row, row.detalle);
+  return applyDespicheToText(withCycles, diuresis, deposicion);
+}
+
+function isCamLikeRecord(row) {
+  return Boolean(row.detalle && (row.turno || row.cuidadora || row.usuario === "cuidadoras@hogarantu.cl" || /CAM|Control de ciclos|Despiche|Diuresis|Deposici[oó]n/i.test(String(row.tipo || row.detalle || ""))));
+}
+
+function ensureCamCycleText(row, detail) {
+  const text = String(detail || "");
+  if (/Temp\s+[\d,.]+/i.test(text) || ![row.cicloTemp, row.cicloSpo2, row.cicloPa, row.cicloHgt].some(Boolean)) return text;
+  const cycleText = `Control registrado. Temp ${row.cicloTemp || "-"} C, Sat ${row.cicloSpo2 || "-"}%, PA ${row.cicloPa || "-"}, HGT ${row.cicloHgt || "-"}.`;
+  return `${cycleText} ${text}`.trim();
+}
+
+function recordText(row) {
+  return String([row.detalle, row.registro, row.observacion, row.tipo, row.rol, row.despicheTipo].filter(Boolean).join(" "));
+}
+
+function recordHasDiuresis(row) {
+  return recordDespicheResult(row, "Diuresis") === "Si";
+}
+
+function recordHasDeposicion(row) {
+  return recordDespicheResult(row, "Deposición") === "Si";
+}
+
+function recordDespicheResult(row, tipo) {
+  const text = recordText(row);
+  if (tipo === "Diuresis" && row.diuresisResultado) return normalizeSiNo(row.diuresisResultado);
+  if (tipo === "Deposición" && row.deposicionResultado) return normalizeSiNo(row.deposicionResultado);
+  if (tipo === "Diuresis") {
+    const match = text.match(/Diuresis:\s*(Si|No)/i);
+    if (match) return normalizeSiNo(match[1]);
+  }
+  if (tipo === "Deposición") {
+    const match = text.match(/Deposici[oó]n:\s*(Si|No)/i);
+    if (match) return normalizeSiNo(match[1]);
+  }
+  if (isCamLikeRecord(row) && /Despiche|Diuresis|Deposici[oó]n/i.test(text)) {
+    return inferDespicheResultado(row.detalle || text, tipo, row);
+  }
+  return "";
+}
+
+function recordHasCycles(row) {
+  return Boolean([row.cicloTemp, row.cicloSpo2, row.cicloPa, row.cicloHgt].some(Boolean) || /Temp\s+[\d,.]+|Sat\s+\d+%|PA\s+\d+\/\d+|HGT\s+\d+|toma de ciclos|control de ciclos/i.test(recordText(row)));
+}
+
+function recordHasMedication(row) {
+  return Boolean(row.medicamento || /Medicamento|medicamentos suministrados|administrado/i.test(recordText(row)));
+}
+
+function recordHasPosition(row) {
+  return Boolean(row.posicion || row.horaPosicion || /Cambio de posici[oó]n/i.test(recordText(row)));
+}
+
+function recordHasMudas(row) {
+  return Boolean(row.mudaResultado || row.horaMuda || row.mudaMotivo || /Mudas/i.test(recordText(row)));
+}
+
+function recordHasObservation(row) {
+  return Boolean(row.observacionCam || row.observacion || row.registro || /Observaci[oó]n|evoluci[oó]n|revision|registro/i.test(recordText(row)));
 }
 
 function renderFormularioProfesional(rol) {
@@ -749,24 +1223,75 @@ function renderFormularioProfesional(rol) {
       <label>Evolucion / registro ${rol}</label>
       <textarea id="proTexto"></textarea>
     </div>
+    <div class="form-section">
+      <h2>Diuresis / Deposición</h2>
+      <div class="grid2">
+        <div><label>Diuresis (orina)</label><select id="proDiuresisResultado"><option>Si</option><option>No</option></select></div>
+        <div><label>Deposición (heces fecales)</label><select id="proDeposicionResultado"><option>Si</option><option>No</option></select></div>
+      </div>
+    </div>
     ${toggle("chkProCiclos", "Toma de ciclos")}
     <div id="secProCiclos" class="form-section hidden">
       <h2>Toma de ciclos</h2>
       <div class="notice">Esta toma quedara asociada al residente seleccionado arriba y al usuario profesional que ingresa el registro.</div>
       <div class="grid3">
-        <div><label>Temperatura C</label><input id="proTemp" placeholder="36,8"></div>
-        <div><label>Saturacion %</label><input id="proSpo2" type="number" placeholder="96"></div>
-        <div><label>Presion arterial mmHg</label><input id="proPa" placeholder="125/80"></div>
-        <div><label>HGT / Glucosa mg/dL</label><input id="proHgt" type="number" placeholder="110"></div>
+        <div><label>Temperatura C</label><input id="proTemp" inputmode="decimal" placeholder="36,8"></div>
+        <div><label>Saturación %</label><input id="proSpo2" type="number" min="0" max="100" step="1" placeholder="96"></div>
+        <div><label>Presión arterial mmHg</label>${pressureInputs("proPa")}</div>
+        <div><label>HGT / Glucosa mg/dL</label><input id="proHgt" type="number" min="20" max="1000" step="1" placeholder="110"></div>
         <div><label>Observacion ciclos</label><input id="proObsCiclos" placeholder="Opcional"></div>
       </div>
     </div>
-    <div class="form-section">
-      <h2>Diuresis / Deposición</h2>
-      <div class="grid3">
-        <div><label>Tipo</label><select id="proDespicheTipo"><option>Diuresis</option><option>Deposición</option></select></div>
-        <div><label>Resultado</label><select id="proDespicheResultado"><option>Si</option><option>No</option></select></div>
+    ${toggle("chkProMed", "Administracion de medicamentos")}
+    <div id="secProMed" class="form-section hidden">
+      <h2>Administracion de medicamentos</h2>
+      <div class="grid2">
+        <div><label>Hora administracion</label><input id="proHoraMed" type="time"></div>
+        <div><label>Nombre medicamento</label><input id="proMed" placeholder="Ej: Losartan 50 mg"></div>
       </div>
+    </div>
+    ${toggle("chkProPosicion", "Cambio de Posición")}
+    <div id="secProPosicion" class="form-section hidden">
+      <h2>Cambio de Posición</h2>
+      <div class="grid2 position-layout">
+        <div>
+          <label>Posición registrada</label>
+          <select id="proPosicion">
+            <option>Decúbito supino (boca arriba)</option>
+            <option>Decúbito lateral derecho</option>
+            <option>Decúbito lateral izquierdo</option>
+          </select>
+          <label>Hora del cambio de posición</label>
+          <input id="proHoraPosicion" type="time">
+        </div>
+        <div class="position-reference">
+          <img src="./assets/cambios-posicion.png" alt="Referencia de cambios de posición">
+        </div>
+      </div>
+    </div>
+    ${toggle("chkProMudas", "Mudas")}
+    <div id="secProMudas" class="form-section hidden">
+      <h2>Mudas</h2>
+      <div class="grid2">
+        <div>
+          <label>¿Se realizó muda?</label>
+          <select id="proMuda">
+            <option>Si</option>
+            <option>No</option>
+          </select>
+        </div>
+        <div><label>Hora de la muda</label><input id="proHoraMuda" type="time"></div>
+      </div>
+      <div id="proMudaMotivoWrap" class="hidden">
+        <label>Motivo por el cual no se realizó muda</label>
+        <textarea id="proMudaMotivo" placeholder="Ej: no aplica, residente autovalente, no requiere cambio de muda"></textarea>
+      </div>
+    </div>
+    ${toggle("chkProObs", "Agregar observaciones")}
+    <div id="secProObs" class="form-section hidden">
+      <h2>Observaciones</h2>
+      <label>Detalle</label>
+      <textarea id="proObs" placeholder="Comentarios adicionales del cuidado o procedimiento"></textarea>
     </div>
     <button class="btn primary" onclick="confirmProfesional('${rol}')">Guardar registro</button>`;
   $("proResidente").addEventListener("change", () => {
@@ -774,26 +1299,53 @@ function renderFormularioProfesional(rol) {
     $("proFicha").innerHTML = residentProfile(resident);
   });
   bindProfessionalDateRules();
-  bindProfessionalCycleToggle();
+  bindProfessionalToggles();
+  bindProfessionalMudaReason();
   bindDecimalCommaValidation(["proTemp"]);
 }
 
 function confirmProfesional(rol) {
   const resident = RESIDENTES.find((r) => r.id === Number($("proResidente").value));
   const fechaHora = `${$("proFecha").value || "2026-06-14"} ${$("proHora").value || "10:00"}`;
-  const incluyeCiclos = $("chkProCiclos").checked;
+  const incluyeCiclos = $("chkProCiclos").checked || professionalCyclesActive();
+  const hasMedicationData = professionalMedicationActive();
+  const hasPositionData = professionalPositionActive();
+  const hasMudaData = professionalMudaActive();
+  const hasObservationData = professionalObservationActive();
   const dateError = validateProfessionalDate();
   if (dateError) {
     openModal("Fecha no permitida", dateError);
     return;
   }
   if (incluyeCiclos && !professionalCyclesValid()) {
-    openModal("Toma de ciclos", "Debe completar temperatura, saturacion, presion arterial y HGT/Glucosa para guardar la toma de ciclos.");
+    openModal("Toma de ciclos", "Debe completar temperatura, saturacion, presion arterial sistolica y diastolica, y HGT/Glucosa para guardar la toma de ciclos.");
+    return;
+  }
+  const faltantes = [];
+  if (hasMedicationData && !$("proMed").value.trim()) faltantes.push("nombre medicamento");
+  if (hasPositionData && !$("proPosicion").value) faltantes.push("cambio de posicion");
+  if (hasPositionData && !$("proHoraPosicion").value) faltantes.push("hora del cambio de posicion");
+  if (hasMudaData && !$("proMuda").value) faltantes.push("mudas");
+  if (hasMudaData && !$("proHoraMuda").value) faltantes.push("hora de muda");
+  if (hasMudaData && $("proMuda").value === "No" && !$("proMudaMotivo").value.trim()) faltantes.push("motivo por el cual no se realizo muda");
+  if (hasObservationData && !$("proObs").value.trim()) faltantes.push("detalle de observacion");
+  if (faltantes.length) {
+    openModal("Campos obligatorios", `Debe completar: ${faltantes.join(", ")}.`);
     return;
   }
   const decimalError = validateDecimalCommaFields([{ id: "proTemp", label: "temperatura" }]);
   if (decimalError) {
     openModal("Separador decimal", decimalError);
+    return;
+  }
+  const vitalError = incluyeCiclos ? validateCycleNumbers({
+    tempId: "proTemp",
+    spo2Id: "proSpo2",
+    pressurePrefix: "proPa",
+    hgtId: "proHgt"
+  }) : "";
+  if (vitalError) {
+    openModal("Valor no permitido", vitalError);
     return;
   }
   openModal(`Confirmar registro ${rol}`, `Esta seguro que desea agregar este registro al residente ${resident.nombre}?`, () => {
@@ -802,9 +1354,27 @@ function confirmProfesional(rol) {
       fecha: fechaHora,
       residente: resident.nombre,
       rol,
+      usuario: rol === "Enfermero" ? "enfermero@hogarantu.cl" : "dt@hogarantu.cl",
       registro: professionalRecordDetail(registro, incluyeCiclos),
-      despicheTipo: $("proDespicheTipo").value,
-      despicheResultado: $("proDespicheResultado").value,
+      despicheTipo: "Diuresis / Deposición",
+      despicheResultado: despicheHasNo({
+        diuresisResultado: $("proDiuresisResultado").value,
+        deposicionResultado: $("proDeposicionResultado").value
+      }) ? "No" : "Si",
+      diuresisResultado: $("proDiuresisResultado").value,
+      deposicionResultado: $("proDeposicionResultado").value,
+      cicloTemp: incluyeCiclos ? $("proTemp").value : "",
+      cicloSpo2: incluyeCiclos ? $("proSpo2").value : "",
+      cicloPa: incluyeCiclos ? pressureValue("proPa") : "",
+      cicloHgt: incluyeCiclos ? $("proHgt").value : "",
+      medicamento: hasMedicationData ? ($("proMed").value || "Medicamento sin nombre") : "",
+      horaMedicamento: hasMedicationData ? ($("proHoraMed").value || "") : "",
+      posicion: hasPositionData ? $("proPosicion").value : "",
+      horaPosicion: hasPositionData ? $("proHoraPosicion").value : "",
+      mudaResultado: hasMudaData ? $("proMuda").value : "",
+      horaMuda: hasMudaData ? $("proHoraMuda").value : "",
+      mudaMotivo: hasMudaData && $("proMuda").value === "No" ? $("proMudaMotivo").value.trim() : "",
+      observacionCam: hasObservationData ? $("proObs").value.trim() : "",
       editable: true
     });
     if (incluyeCiclos) {
@@ -815,11 +1385,44 @@ function confirmProfesional(rol) {
   });
 }
 
-function bindProfessionalCycleToggle() {
-  const checkbox = $("chkProCiclos");
-  const section = $("secProCiclos");
-  if (!checkbox || !section) return;
-  checkbox.addEventListener("change", () => section.classList.toggle("hidden", !checkbox.checked));
+function bindProfessionalToggles() {
+  [
+    ["chkProCiclos", "secProCiclos"],
+    ["chkProMed", "secProMed"],
+    ["chkProPosicion", "secProPosicion"],
+    ["chkProMudas", "secProMudas"],
+    ["chkProObs", "secProObs"]
+  ].forEach(([chk, sec]) => {
+    const checkbox = $(chk);
+    const section = $(sec);
+    if (!checkbox || !section) return;
+    const card = checkbox.closest(".toggle-card");
+    const mark = card?.querySelector(".toggle-card-mark");
+    const update = () => {
+      section.classList.toggle("hidden", !checkbox.checked);
+      card?.classList.toggle("active", checkbox.checked);
+      if (mark) mark.textContent = checkbox.checked ? "✓" : "+";
+      if (checkbox.checked && chk === "chkProPosicion" && $("proHoraPosicion") && !$("proHoraPosicion").value) {
+        $("proHoraPosicion").value = $("proHora")?.value || "";
+      }
+      if (checkbox.checked && chk === "chkProMudas" && $("proHoraMuda") && !$("proHoraMuda").value) {
+        $("proHoraMuda").value = $("proHora")?.value || "";
+      }
+    };
+    checkbox.addEventListener("change", update);
+    update();
+  });
+}
+
+function bindProfessionalMudaReason() {
+  const select = $("proMuda");
+  const wrap = $("proMudaMotivoWrap");
+  if (!select || !wrap) return;
+  const update = () => {
+    wrap.classList.toggle("hidden", select.value !== "No");
+  };
+  select.addEventListener("change", update);
+  update();
 }
 
 function bindProfessionalDateRules() {
@@ -842,11 +1445,31 @@ function validateProfessionalDate() {
 }
 
 function professionalCyclesValid() {
-  return Boolean($("proTemp").value && $("proSpo2").value && $("proPa").value && $("proHgt").value);
+  return Boolean($("proTemp").value && $("proSpo2").value && pressureValue("proPa") && $("proHgt").value);
+}
+
+function professionalCyclesActive() {
+  return ["proTemp", "proSpo2", "proPaSistolica", "proPaDiastolica", "proHgt"].some((id) => Boolean($(id)?.value));
+}
+
+function professionalMedicationActive() {
+  return Boolean($("chkProMed")?.checked || $("proMed")?.value?.trim() || $("proHoraMed")?.value);
+}
+
+function professionalPositionActive() {
+  return Boolean($("chkProPosicion")?.checked || $("proHoraPosicion")?.value);
+}
+
+function professionalMudaActive() {
+  return Boolean($("chkProMudas")?.checked || $("proHoraMuda")?.value || $("proMudaMotivo")?.value?.trim());
+}
+
+function professionalObservationActive() {
+  return Boolean($("chkProObs")?.checked || $("proObs")?.value?.trim());
 }
 
 function professionalCycleRecord(resident, rol, fechaHora) {
-  const pressure = parsePressure($("proPa").value);
+  const pressure = parsePressure(pressureValue("proPa"));
   return {
     residente: resident.nombre,
     fecha: fechaHora,
@@ -861,18 +1484,52 @@ function professionalCycleRecord(resident, rol, fechaHora) {
 }
 
 function professionalCyclesDetail() {
-  return `Temp ${$("proTemp").value} C, Sat ${$("proSpo2").value}%, PA ${$("proPa").value}, HGT ${$("proHgt").value}. ${$("proObsCiclos").value || ""}`.trim();
+  return `Temp ${$("proTemp").value} C, Sat ${$("proSpo2").value}%, PA ${pressureValue("proPa")}, HGT ${$("proHgt").value}. ${$("proObsCiclos").value || ""}`.trim();
 }
 
 function professionalDespicheDetail() {
-  return `${$("proDespicheTipo").value}: ${$("proDespicheResultado").value}.`;
+  return `Diuresis: ${$("proDiuresisResultado").value}. Deposición: ${$("proDeposicionResultado").value}.`;
 }
 
 function professionalRecordDetail(registro, incluyeCiclos) {
   const parts = [registro];
   if (incluyeCiclos) parts.push(`Se agrega toma de ciclos profesional: ${professionalCyclesDetail()}`);
   parts.push(professionalDespicheDetail());
+  if (professionalMedicationActive()) parts.push(`Medicamento ${$("proMed").value || "sin nombre"} a las ${$("proHoraMed").value || "--:--"}.`);
+  if (professionalPositionActive()) parts.push(`Cambio de posición: ${$("proPosicion").value} a las ${$("proHoraPosicion").value || "--:--"}.`);
+  if (professionalMudaActive()) {
+    const motivo = $("proMuda").value === "No" ? ` Motivo: ${$("proMudaMotivo").value.trim()}.` : "";
+    parts.push(`Mudas: ${$("proMuda").value} a las ${$("proHoraMuda").value || "--:--"}.${motivo}`);
+  }
+  if (professionalObservationActive()) parts.push($("proObs").value || "Sin detalle de observacion.");
   return parts.join(" ");
+}
+
+function validateCycleNumbers({ tempId, spo2Id, pressurePrefix, hgtId }) {
+  const tempText = $(tempId)?.value;
+  const temp = parseDecimalValue(tempText);
+  const spo2 = Number($(spo2Id)?.value);
+  const pressure = parsePressure(pressureValue(pressurePrefix));
+  const hgt = Number($(hgtId)?.value);
+  if (!Number.isFinite(temp) || temp < 30 || temp > 45) {
+    return "La temperatura debe estar entre 30 y 45 C.";
+  }
+  if (!Number.isFinite(spo2) || spo2 < 0 || spo2 > 100) {
+    return "La saturacion debe ser un numero entre 0 y 100%.";
+  }
+  if (!Number.isFinite(pressure.sistolica) || pressure.sistolica < 40 || pressure.sistolica > 260) {
+    return "La presion sistolica debe estar entre 40 y 260 mmHg.";
+  }
+  if (!Number.isFinite(pressure.diastolica) || pressure.diastolica < 20 || pressure.diastolica > 180) {
+    return "La presion diastolica debe estar entre 20 y 180 mmHg.";
+  }
+  if (pressure.diastolica >= pressure.sistolica) {
+    return "La presion diastolica debe ser menor que la sistolica.";
+  }
+  if (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000) {
+    return "El HGT / glucosa debe estar entre 20 y 1000 mg/dL.";
+  }
+  return "";
 }
 
 function parsePressure(value) {
@@ -1134,9 +1791,9 @@ function controlesTable(resident) {
 function medicamentosTable(resident) {
   const today = new Date(2026, 5, 14, 23, 59);
   const camLimit = daysBefore(today, 5);
-  const rows = REGISTROS_CAM
+  const rows = [...REGISTROS_CAM, ...REGISTROS_PRO]
     .filter((registro) => registro.residente === resident.nombre)
-    .filter((registro) => registro.tipo.toLowerCase().includes("medicamento"))
+    .filter((registro) => recordHasMedication(registro))
     .filter((registro) => parseRegistroDate(registro.fecha) >= camLimit)
     .sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
   return `<div class="card table-wrap">
@@ -1147,9 +1804,9 @@ function medicamentosTable(resident) {
         ${rows.length ? rows.map((row) => `<tr>
           <td>${medicamentoFecha(row)}</td>
           <td>${row.medicamento || inferMedicamento(row.detalle)}</td>
-          <td>${row.usuario || usuarioCamPorTurno(row.turno)}</td>
-          <td>${row.cuidadora}</td>
-          <td>${row.detalle}</td>
+          <td>${row.usuario || row.rol || usuarioCamPorTurno(row.turno)}</td>
+          <td>${row.cuidadora || row.rol || "-"}</td>
+          <td>${isCamLikeRecord(row) ? camDisplayDetail(row) : row.registro}</td>
         </tr>`).join("") : `<tr><td colspan="5">Sin administracion de medicamentos registrada para este residente en los ultimos 5 dias.</td></tr>`}
       </tbody>
     </table>
@@ -1188,22 +1845,22 @@ function bitacoraResidente(resident) {
     : `<div class="notice">Sin registros para el periodo seleccionado en esta maqueta.</div>`;
   return `<div class="card">
     <h2>Bitacora resumen de registros</h2>
-    <div class="notice">Incluye ultimos 15 dias: Directora Tecnica, Enfermero y Nutricionista. De cuidadoras solo muestra administracion de medicamentos o registros asociados a alertas. Orden: fecha decreciente.</div>
+    <div class="notice">Incluye ultimos 7 dias: Directora Tecnica y Enfermero. De cuidadoras solo muestra administracion de medicamentos o registros asociados a alertas. Nutricionista muestra su ultimo registro mensual. Orden: fecha decreciente.</div>
     ${content}
   </div>`;
 }
 
 function bitacoraResumenEntries(resident) {
   const today = dashboardReferenceDate();
-  const limit = daysBefore(today, 15);
+  const limit = daysBefore(today, 7);
   const camEntries = REGISTROS_CAM
     .filter((registro) => registro.residente === resident.nombre && parseRegistroDate(registro.fecha) >= limit && parseRegistroDate(registro.fecha) <= today)
     .filter((registro) => camRegistroEjecutivo(registro))
     .map((registro) => ({
       fecha: registro.fecha,
       date: parseRegistroDate(registro.fecha),
-      tipo: `CAM / ${registro.tipo}`,
-      detalle: `<b>Usuario:</b> ${registro.usuario || usuarioCamPorTurno(registro.turno)}. <b>Cuidadora:</b> ${registro.cuidadora}. <b>Turno:</b> ${registro.turno}. ${registro.detalle}`,
+      tipo: `CAM / ${displayRegistroTipo(registro.tipo)}`,
+      detalle: `<b>Usuario:</b> ${registro.usuario || usuarioCamPorTurno(registro.turno)}. <b>Cuidadora:</b> ${registro.cuidadora}. <b>Turno:</b> ${registro.turno}. ${camDisplayDetail(registro)}`,
       clase: "timeline-cam"
     }));
   const profesionalEntries = REGISTROS_PRO
@@ -1215,15 +1872,16 @@ function bitacoraResumenEntries(resident) {
       detalle: registro.registro,
       clase: registro.rol === "Enfermero" ? "timeline-enfermero" : "timeline-dt"
     }));
-  const nutriEntries = REGISTROS_NUTRI
-    .filter((registro) => registro.residente === resident.nombre && parseRegistroDate(registro.fecha) >= limit && parseRegistroDate(registro.fecha) <= today)
-    .map((registro) => ({
-      fecha: registro.fecha,
-      date: parseRegistroDate(registro.fecha),
+  const ultimoNutri = REGISTROS_NUTRI
+    .filter((registro) => registro.residente === resident.nombre && parseRegistroDate(registro.fecha) <= today)
+    .sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha))[0];
+  const nutriEntries = ultimoNutri ? [{
+      fecha: ultimoNutri.fecha,
+      date: parseRegistroDate(ultimoNutri.fecha),
       tipo: "Nutricionista",
-      detalle: `<b>IMC:</b> ${registro.imc}. ${registro.observacion}`,
+      detalle: `<b>IMC:</b> ${ultimoNutri.imc}. ${ultimoNutri.observacion}`,
       clase: "timeline-nutri"
-    }));
+    }] : [];
   return [...camEntries, ...profesionalEntries, ...nutriEntries]
     .sort((a, b) => b.date - a.date);
 }
@@ -1274,8 +1932,13 @@ function numberMatch(text, pattern) {
 }
 
 function registroDespicheAsociadoAAlerta(registro) {
-  if (String(registro.despicheResultado || "").toLowerCase() !== "no") return false;
+  if (!despicheHasNo(registro)) return false;
   return alertasDespicheConsecutivo().some((alerta) => alerta.residente === registro.residente);
+}
+
+function despicheHasNo(registro) {
+  return [registro.diuresisResultado, registro.deposicionResultado, registro.despicheResultado]
+    .some((value) => String(value || "").toLowerCase() === "no");
 }
 
 function alertaMismaFechaResidente(registro) {
@@ -1469,9 +2132,9 @@ function registrosUsuariosTable() {
       <td>${origen}</td>
       <td>${row.usuario || row.rol || "nutricion@hogarantu.cl"}</td>
       <td>${row.cuidadora || "-"}</td>
-      <td>${row.detalle || row.registro || row.observacion || ""}</td>
+      <td>${recordChecklistDetail(row)}</td>
       <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
-      <td><button class="btn secondary" onclick="startRecordEdit('${source}', ${index})">Editar</button></td>
+      <td>${adminRecordActionButtons(source, index, row)}</td>
     </tr>`).join("")}</tbody>
   </table>
   ${registrosPagination(totalPages)}
@@ -1545,45 +2208,75 @@ function exportRegistrosUsuariosExcel() {
   downloadHtmlExcel(html, `registros_usuarios_${state.registrosExportMode === "all" ? "todos" : `${state.registrosExportFrom}_${state.registrosExportTo}`}.xls`);
 }
 
+function adminRecordActionButtons(source, index, row) {
+  return `<div class="action-stack">
+    <button class="btn ghost" onclick="startRecordView('${source}', ${index})">Ver</button>
+    <button class="btn secondary" onclick="startRecordEdit('${source}', ${index})">Editar</button>
+  </div>`;
+}
+
+function startRecordView(source, index, returnView = "registros") {
+  renderRecordForm(source, index, returnView, false, true);
+}
+
 function startRecordEdit(source, index, returnView = "registros", requireEditable = false) {
+  renderRecordForm(source, index, returnView, requireEditable, false);
+}
+
+function renderRecordForm(source, index, returnView = "registros", requireEditable = false, readOnly = false) {
   const row = recordArray(source)[index];
   if (requireEditable && !row.editable) {
     openModal("Registro bloqueado", "Este registro ya supero el periodo permitido de edicion.");
     return;
   }
+  if (source === "cam") {
+    state.editReturnView = returnView;
+    renderFormularioCam($("view"), { row, index, returnView, readonly: readOnly });
+    return;
+  }
   state.editReturnView = returnView;
   const detalle = row.detalle || row.registro || row.observacion || "";
-  const userReadonly = requireEditable && source === "pro" ? "readonly" : "";
+  const lockAttr = readOnly ? "readonly" : "";
+  const userReadonly = readOnly || (requireEditable && source === "pro") ? "readonly" : "";
+  const title = readOnly ? "Ver registro de usuario" : "Editar registro de usuario";
+  const help = readOnly ? "Vista de solo lectura del registro ingresado." : editRecordHelpText(requireEditable);
+  const despicheFields = hasEditableDespicheView(source, row) ? editDespicheFields(row, readOnly) : "";
   const hasDespiche = source === "cam" || source === "pro";
-  $("view").innerHTML = page("Editar registro de usuario", editRecordHelpText(requireEditable)) +
+  $("view").innerHTML = page(title, help) +
     `<div class="form-section">
       <div class="grid3">
-        <div><label>Fecha</label><input id="editRegistroFecha" value="${row.fecha || ""}"></div>
+        <div><label>Fecha</label><input id="editRegistroFecha" value="${row.fecha || ""}" ${lockAttr}></div>
         <div><label>Residente</label><input id="editRegistroResidente" value="${row.residente || ""}" readonly></div>
         <div><label>Usuario / rol</label><input id="editRegistroUsuario" value="${recordUserValue(row, source)}" ${userReadonly}></div>
-        ${source === "cam" ? `<div><label>Cuidadora</label><input id="editRegistroCuidadora" value="${row.cuidadora || ""}"></div>` : ""}
+        ${source === "cam" ? `<div><label>Cuidadora</label><input id="editRegistroCuidadora" value="${row.cuidadora || ""}" ${lockAttr}></div>` : ""}
       </div>
-      ${hasDespiche ? editDespicheFields(row) : ""}
+      ${hasDespiche ? despicheFields : ""}
       <label>Detalle del registro</label>
-      <textarea id="editRegistroDetalle">${detalle}</textarea>
+      <textarea id="editRegistroDetalle" ${readOnly ? "readonly" : ""}>${detalle}</textarea>
       <div class="form-actions">
-        <button class="btn primary" onclick="saveRecordEdit('${source}', ${index})">Guardar cambios</button>
-        <button class="btn ghost" onclick="go('${returnView}')">Cancelar</button>
+        ${readOnly ? "" : `<button class="btn primary" onclick="saveRecordEdit('${source}', ${index})">Guardar cambios</button>`}
+        <button class="btn ghost" onclick="go('${returnView}')">${readOnly ? "Volver" : "Cancelar"}</button>
       </div>
     </div>`;
 }
 
-function editDespicheFields(row) {
-  const tipo = row.despicheTipo || inferDespicheTipo(row.detalle || row.registro || "");
-  const resultado = row.despicheResultado || inferDespicheResultado(row.detalle || row.registro || "");
-  return `<div class="grid3">
-    <div><label>Tipo diuresis/deposición</label><select id="editDespicheTipo">
-      <option ${tipo === "Diuresis" ? "selected" : ""}>Diuresis</option>
-      <option ${tipo === "Deposición" ? "selected" : ""}>Deposición</option>
+function hasEditableDespicheView(source, row) {
+  return source === "pro" || source === "cam" || recordHasDiuresis(row) || recordHasDeposicion(row);
+}
+
+function editDespicheFields(row, readOnly = false) {
+  const text = row.detalle || row.registro || "";
+  const diuresis = row.diuresisResultado || inferDespicheResultado(text, "Diuresis", row);
+  const deposicion = row.deposicionResultado || inferDespicheResultado(text, "Deposición", row);
+  const disabled = readOnly ? "disabled" : "";
+  return `<div class="grid2">
+    <div><label>Diuresis (orina)</label><select id="editDiuresisResultado" ${disabled}>
+      <option ${diuresis === "Si" ? "selected" : ""}>Si</option>
+      <option ${diuresis === "No" ? "selected" : ""}>No</option>
     </select></div>
-    <div><label>Resultado</label><select id="editDespicheResultado">
-      <option ${resultado === "Si" ? "selected" : ""}>Si</option>
-      <option ${resultado === "No" ? "selected" : ""}>No</option>
+    <div><label>Deposición (heces fecales)</label><select id="editDeposicionResultado" ${disabled}>
+      <option ${deposicion === "Si" ? "selected" : ""}>Si</option>
+      <option ${deposicion === "No" ? "selected" : ""}>No</option>
     </select></div>
   </div>`;
 }
@@ -1592,8 +2285,21 @@ function inferDespicheTipo(text) {
   return /deposici[oó]n/i.test(String(text || "")) ? "Deposición" : "Diuresis";
 }
 
-function inferDespicheResultado(text) {
-  const match = String(text || "").match(/(?:Diuresis|Deposici[oó]n):\s*(Si|No)/i);
+function inferDespicheResultado(text, tipo = null, row = null) {
+  const source = String(text || "");
+  if (tipo === "Diuresis") {
+    const match = source.match(/Diuresis:\s*(Si|No)/i);
+    if (match) return normalizeSiNo(match[1]);
+  }
+  if (tipo === "Deposición") {
+    const match = source.match(/Deposici[oó]n:\s*(Si|No)/i);
+    if (match) return normalizeSiNo(match[1]);
+  }
+  if (row?.despicheTipo && row?.despicheResultado && (!tipo || row.despicheTipo === tipo)) {
+    return normalizeSiNo(row.despicheResultado);
+  }
+  if (tipo) return "Si";
+  const match = source.match(/(?:Diuresis|Deposici[oó]n):\s*(Si|No)/i);
   return match ? normalizeSiNo(match[1]) : "Si";
 }
 
@@ -1622,14 +2328,18 @@ function saveRecordEdit(source, index) {
     if (source === "cam") {
       row.usuario = $("editRegistroUsuario").value;
       row.cuidadora = $("editRegistroCuidadora").value;
-      row.despicheTipo = $("editDespicheTipo").value;
-      row.despicheResultado = $("editDespicheResultado").value;
-      row.detalle = applyDespicheToText($("editRegistroDetalle").value, row.despicheTipo, row.despicheResultado);
+      row.despicheTipo = "Diuresis / Deposición";
+      row.diuresisResultado = $("editDiuresisResultado").value;
+      row.deposicionResultado = $("editDeposicionResultado").value;
+      row.despicheResultado = despicheHasNo(row) ? "No" : "Si";
+      row.detalle = applyDespicheToText($("editRegistroDetalle").value, row.diuresisResultado, row.deposicionResultado);
     } else if (source === "pro") {
       row.usuario = $("editRegistroUsuario").value;
-      row.despicheTipo = $("editDespicheTipo").value;
-      row.despicheResultado = $("editDespicheResultado").value;
-      row.registro = applyDespicheToText($("editRegistroDetalle").value, row.despicheTipo, row.despicheResultado);
+      row.despicheTipo = "Diuresis / Deposición";
+      row.diuresisResultado = $("editDiuresisResultado").value;
+      row.deposicionResultado = $("editDeposicionResultado").value;
+      row.despicheResultado = despicheHasNo(row) ? "No" : "Si";
+      row.registro = applyDespicheToText($("editRegistroDetalle").value, row.diuresisResultado, row.deposicionResultado);
     } else {
       row.observacion = $("editRegistroDetalle").value;
     }
@@ -1639,12 +2349,12 @@ function saveRecordEdit(source, index) {
   });
 }
 
-function applyDespicheToText(text, tipo, resultado) {
-  const detail = String(text || "").trim();
-  const replacement = `${tipo}: ${resultado}.`;
-  if (/(Diuresis|Deposici[oó]n):\s*(Si|No)\.?/i.test(detail)) {
-    return detail.replace(/(Diuresis|Deposici[oó]n):\s*(Si|No)\.?/i, replacement);
-  }
+function applyDespicheToText(text, diuresisResultado, deposicionResultado) {
+  const detail = String(text || "")
+    .replace(/Diuresis:\s*(Si|No)\.?\s*/gi, "")
+    .replace(/Deposici[oó]n:\s*(Si|No)\.?\s*/gi, "")
+    .trim();
+  const replacement = `Diuresis: ${diuresisResultado}. Deposición: ${deposicionResultado}.`;
   return `${detail}${detail ? " " : ""}${replacement}`;
 }
 
@@ -1908,11 +2618,11 @@ function alertasDespicheConsecutivo() {
   RESIDENTES.forEach((resident) => {
     const registros = registrosDespiche()
       .filter((registro) => registro.residente === resident.nombre)
-      .filter((registro) => registro.despicheResultado)
+      .filter((registro) => registro.despicheResultado || registro.diuresisResultado || registro.deposicionResultado)
       .sort((a, b) => parseRegistroDate(a.fecha) - parseRegistroDate(b.fecha));
     let streak = 0;
     registros.forEach((registro) => {
-      if (String(registro.despicheResultado || "").toLowerCase() === "no") {
+      if (despicheHasNo(registro)) {
         streak += 1;
       } else {
         streak = 0;
@@ -2211,7 +2921,7 @@ function reportMedicationTable(rows, limit = null) {
         <tbody>${medicamentos.map((row) => `<tr>
           <td>${medicamentoDia(row)}</td>
           <td>${medicamentoHora(row)}</td>
-          <td>${row.usuario || usuarioCamPorTurno(row.turno)}</td>
+          <td>${row.usuario || row.rol || usuarioCamPorTurno(row.turno)}</td>
           <td>${row.cuidadora || row.rol || "-"}</td>
           <td>${row.medicamento || inferMedicamento(row.detalle || row.registro)}</td>
         </tr>`).join("") || `<tr><td colspan="5">Sin medicamentos registrados en el periodo.</td></tr>`}</tbody>
@@ -2282,16 +2992,16 @@ function reportData(resident, days) {
   const controles = CONTROLES_CICLOS
     .filter((row) => row.residente === resident.nombre && inPeriod(row))
     .sort((a, b) => parseRegistroDate(a.fecha) - parseRegistroDate(b.fecha));
-  const medicamentos = cam
-    .filter((row) => row.tipo.toLowerCase().includes("medicamento"))
+  const medicamentos = [...cam, ...pro]
+    .filter((row) => recordHasMedication(row))
     .sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
   const alertas = reportAlertsForResident(resident, start, today);
   const entries = [
     ...camEjecutivo.map((registro) => ({
       fecha: registro.fecha,
       date: parseRegistroDate(registro.fecha),
-      tipo: `CAM / ${registro.tipo}`,
-      detalle: formatDecimalText(`<b>Usuario:</b> ${registro.usuario || usuarioCamPorTurno(registro.turno)}. <b>Cuidadora:</b> ${registro.cuidadora}. ${registro.detalle}`),
+      tipo: `CAM / ${displayRegistroTipo(registro.tipo)}`,
+      detalle: formatDecimalText(`<b>Usuario:</b> ${registro.usuario || usuarioCamPorTurno(registro.turno)}. <b>Cuidadora:</b> ${registro.cuidadora}. ${camDisplayDetail(registro)}`),
       clase: "timeline-cam"
     })),
     ...pro.map((registro) => ({
@@ -2503,7 +3213,7 @@ function powerBiExportData(days) {
   const controles = CONTROLES_CICLOS.filter(inPeriod).sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
   const profesionales = REGISTROS_PRO.filter(inPeriod).sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
   const nutricion = REGISTROS_NUTRI.filter(inPeriod).sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
-  const medicamentos = cam.filter((row) => row.tipo.toLowerCase().includes("medicamento"));
+  const medicamentos = [...cam, ...profesionales].filter((row) => recordHasMedication(row));
   const peso = CONTROLES_PESO.filter(inPeriod).sort((a, b) => parseAnyDate(b.fecha) - parseAnyDate(a.fecha));
   const alertas = todasLasAlertas().filter(inPeriod).sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
   return { cam, controles, profesionales, nutricion, medicamentos, peso, alertas };
@@ -2537,7 +3247,7 @@ function downloadPowerBiExcel(days) {
         ["Fecha", "fecha"], ["Residente", "residente"], ["Usuario", "usuario"], ["Turno", "turno"], ["Cuidadora", "cuidadora"], ["Tipo", "tipo"], ["Detalle", "detalle"]
       ])}
       ${excelTable("Medicamentos", data.medicamentos, [
-        ["Fecha", "fecha"], ["Residente", "residente"], ["Usuario", "usuario"], ["Cuidadora", "cuidadora"], ["Medicamento", (row) => row.medicamento || inferMedicamento(row.detalle)], ["Detalle", "detalle"]
+        ["Fecha", "fecha"], ["Residente", "residente"], ["Usuario", "usuario"], ["Cuidadora", (row) => row.cuidadora || row.rol || "-"], ["Medicamento", (row) => row.medicamento || inferMedicamento(row.detalle || row.registro)], ["Detalle", (row) => row.detalle || row.registro || ""]
       ])}
       ${excelTable("DT Enfermero", data.profesionales, [
         ["Fecha", "fecha"], ["Residente", "residente"], ["Rol", "rol"], ["Registro", "registro"]
