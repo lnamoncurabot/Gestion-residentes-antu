@@ -305,6 +305,7 @@ const ROLES = {
       ["inicio", "Inicio"],
       ["formularioDt", "Formulario DT"],
       ["dashboardResidente", "Dashboard residentes"],
+      ["registros", "Registros usuarios"],
       ["alertas", "Alertas / Alarmas"],
       ["misRegistrosProfesional", "Mis registros"]
     ]
@@ -316,6 +317,7 @@ const ROLES = {
       ["inicio", "Inicio"],
       ["formularioEnfermero", "Formulario Enfermero"],
       ["dashboardResidente", "Dashboard residentes"],
+      ["registros", "Registros usuarios"],
       ["alertas", "Alertas / Alarmas"],
       ["misRegistrosProfesional", "Mis registros"]
     ]
@@ -449,7 +451,7 @@ let REGISTROS_CAM = RESIDENTES.flatMap((residente, residentIndex) =>
       const medicamento = esMedicamento ? MEDICAMENTOS_SIMULADOS[(residentIndex + dayOffset + hourIndex) % MEDICAMENTOS_SIMULADOS.length] : "";
       const despiche = despicheSimulado(residentIndex, dayOffset, hourIndex);
       const parts = ["Control de ciclos"];
-      parts.push("Despiche");
+      parts.push("Diuresis/Deposición");
       if (esMedicamento) parts.push("Medicamento");
       if (esObservacion) parts.push("Observacion");
       const detalle = [
