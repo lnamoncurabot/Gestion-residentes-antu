@@ -359,7 +359,10 @@ function residentsTable(admin) {
           ${RESIDENTES.map((r) => `<tr>
             <td>${r.nombre}</td><td>${r.rut}</td><td>${r.sexo}</td><td>${r.edad}</td>
             <td><span class="badge green">${r.estado}</span></td><td>${r.apoderado}</td>
-            ${admin ? `<td><button class="btn secondary resident-edit" data-id="${r.id}">Editar</button></td>` : ""}
+            ${admin ? `<td><div class="action-stack compact-actions">
+              <button class="btn ghost resident-view" data-id="${r.id}">Ver</button>
+              <button class="btn secondary resident-edit" data-id="${r.id}">Editar</button>
+            </div></td>` : ""}
           </tr>`).join("")}
         </tbody>
       </table>
@@ -377,10 +380,18 @@ function attachResidentButtons() {
   document.querySelectorAll(".resident-edit").forEach((button) => {
     button.addEventListener("click", () => startResidentEdit(Number(button.dataset.id)));
   });
+  document.querySelectorAll(".resident-view").forEach((button) => {
+    button.addEventListener("click", () => startResidentView(Number(button.dataset.id)));
+  });
 }
 
 function startResidentCreate() {
   renderResidentForm(null);
+}
+
+function startResidentView(id) {
+  const resident = RESIDENTES.find((r) => r.id === id);
+  renderResidentForm(resident, true);
 }
 
 function startResidentEdit(id) {
@@ -388,9 +399,11 @@ function startResidentEdit(id) {
   renderResidentForm(resident);
 }
 
-function renderResidentForm(resident) {
+function renderResidentForm(resident, readonly = false) {
   const isEdit = Boolean(resident);
-  $("view").innerHTML = page(isEdit ? "Editar residente" : "Agregar residente", "Complete la ficha del residente. Antes de guardar se solicitara confirmacion.") +
+  const title = readonly ? "Ver residente" : isEdit ? "Editar residente" : "Agregar residente";
+  const subtitle = readonly ? "Ficha de solo lectura del residente seleccionado." : "Complete la ficha del residente. Antes de guardar se solicitara confirmacion.";
+  $("view").innerHTML = page(title, subtitle, `<button class="btn ghost" onclick="go('bdresidentes')">Volver al listado</button>`) +
     `<div class="form-section">
       <h2>Ficha residente</h2>
       <div class="grid3">
@@ -406,15 +419,19 @@ function renderResidentForm(resident) {
         <div><label>Contacto SOS</label><input id="resContactoSos" value="${resident?.contactoSos || ""}"></div>
         <div><label>Telefono SOS</label><input id="resTelefonoSos" value="${resident?.telefonoSos || ""}"></div>
         <div><label>Servicio urgencia</label><input id="resUrgencia" value="${resident?.urgencia || "SAMU"}"></div>
+        <div><label>Estado</label><select id="resEstado">
+          ${["Activo", "Inactivo", "Egresado", "Fallecido"].map((estado) => `<option ${resident?.estado === estado ? "selected" : ""}>${estado}</option>`).join("")}
+        </select></div>
       </div>
       <label>Patologias de ingreso</label>
       <textarea id="resPatologias">${resident?.patologias || ""}</textarea>
       <div class="form-actions">
-        <button class="btn primary" onclick="saveResidentDraft(${resident?.id || "null"})">${isEdit ? "Guardar cambios" : "Crear residente"}</button>
-        <button class="btn ghost" onclick="go('bdresidentes')">Cancelar</button>
+        ${readonly ? "" : `<button class="btn primary" onclick="saveResidentDraft(${resident?.id || "null"})">${isEdit ? "Guardar cambios" : "Crear residente"}</button>`}
+        <button class="btn ghost" onclick="go('bdresidentes')">${readonly ? "Volver" : "Cancelar"}</button>
       </div>
     </div>`;
   bindDecimalCommaValidation(["resPeso"]);
+  if (readonly) lockForm($("view"));
 }
 
 function saveResidentDraft(id) {
@@ -442,7 +459,7 @@ function saveResidentDraft(id) {
     telefonoSos: $("resTelefonoSos").value.trim(),
     contactoSos: $("resContactoSos").value.trim(),
     urgencia: $("resUrgencia").value.trim(),
-    estado: "Activo"
+    estado: $("resEstado").value
   };
   openModal("Confirmar ficha residente", id ? "Desea guardar los cambios de este residente?" : "Desea crear este nuevo residente?", () => {
     if (id) {
