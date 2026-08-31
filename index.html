@@ -4,13 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Gestion Residentes Antu - Maqueta</title>
-  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./styles.css?v=23">
 </head>
 <body class="logged-out">
   <section id="loginScreen" class="login-screen">
     <div class="login-card">
       <img class="login-logo" src="./assets/antu-logo.png" alt="Hogar Antu">
-      <h1>Gestion de residentes</h1>
+      <h1>Gestión de Cuidados del Residente</h1>
       <p>Ingrese con un usuario autorizado para acceder al menu correspondiente.</p>
       <form id="loginForm">
         <label for="loginEmail">Usuario</label>
@@ -24,7 +24,7 @@
         <b>Usuarios demo</b>
         <span>administracion@hogarantu.cl</span>
         <span>administracion_respaldo@hogarantu.cl</span>
-        <span>cam-dia@hogarantu.cl / cam-noche@hogarantu.cl</span>
+        <span>cuidadoras@hogarantu.cl</span>
         <span>dt@hogarantu.cl / enfermero@hogarantu.cl / nutricion@hogarantu.cl</span>
         <small>Clave demo: antu2026</small>
       </div>
@@ -36,7 +36,7 @@
       <img class="brand-logo" src="./assets/antu-logo.png" alt="Hogar Antu">
       <div>
         <div class="brand">Hogar Antu</div>
-        <div class="subtitle">Gestion de residentes</div>
+        <div class="subtitle">Gestión de Cuidados del Residente</div>
       </div>
     </div>
     <div class="session">
@@ -60,7 +60,7 @@
   <div id="modal" class="modal-backdrop" aria-hidden="true">
     <div class="modal">
       <h2 id="modalTitle">Confirmar</h2>
-      <p id="modalText"></p>
+      <div id="modalText"></div>
       <div class="modal-actions">
         <button id="modalConfirm" class="btn primary">Guardar</button>
         <button id="modalCancel" class="btn ghost">Volver y corregir</button>
@@ -69,6 +69,6 @@
   </div>
 
   <script src="./data.js"></script>
-  <script src="./app.js"></script>
+  <script src="./app.js?v=27"></script>
 </body>
 </html>
