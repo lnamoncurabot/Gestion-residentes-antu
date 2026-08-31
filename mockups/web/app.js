@@ -33,6 +33,95 @@ const DEMO_USERS = [
   { email: "enfermero@hogarantu.cl", role: "enfermero" },
   { email: "nutricion@hogarantu.cl", role: "nutricionista" }
 ];
+const API_BASE_URL = window.ANTU_API_BASE_URL || "https://gestion-residentes-antu-production-827b.up.railway.app/api";
+
+async function apiRequest(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {})
+    },
+    ...options
+  });
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    throw new Error(data?.message || `Error HTTP ${response.status}`);
+  }
+  return data;
+}
+
+function replaceResidentsFromApi(rows) {
+  if (!Array.isArray(rows) || !rows.length) return;
+  RESIDENTES.splice(0, RESIDENTES.length, ...rows.map(normalizeApiResident));
+  if (!RESIDENTES.some((resident) => resident.id === state.residentId)) {
+    state.residentId = RESIDENTES[0]?.id || 1;
+  }
+}
+
+function normalizeApiResident(row) {
+  return {
+    id: Number(row.id),
+    nombre: row.nombre || row.nombre_completo || "",
+    rut: row.rut || "",
+    edad: row.edad || row.edad_texto || "",
+    sexo: row.sexo || "No informado",
+    ingreso: formatApiDate(row.ingreso || row.fecha_ingreso),
+    peso: formatPeso(row.peso || row.peso_inicial_kg),
+    patologias: row.patologias || row.patologias_ingreso || "",
+    apoderado: row.apoderado || row.apoderado_nombre || "",
+    mail: row.mail || row.apoderado_email || "",
+    telefonoApoderado: row.telefonoApoderado || row.apoderado_telefono || "",
+    telefonoSos: row.telefonoSos || row.contacto_sos_telefono || "",
+    contactoSos: row.contactoSos || row.contacto_sos_nombre || "",
+    urgencia: row.urgencia || row.servicio_urgencia || "SAMU",
+    estado: row.estado || "Activo"
+  };
+}
+
+function formatApiDate(value) {
+  if (!value) return "";
+  return String(value).slice(0, 10);
+}
+
+function formatPeso(value) {
+  if (value === null || value === undefined || value === "") return "";
+  const text = formatDecimalText(value);
+  return /kg/i.test(text) ? text : `${text} kg`;
+}
+
+function parsePesoNumber(value) {
+  const match = String(value || "").replace(",", ".").match(/\d+(\.\d+)?/);
+  return match ? Number(match[0]) : null;
+}
+
+function residentToApiPayload(payload) {
+  return {
+    nombre_completo: payload.nombre,
+    rut: payload.rut,
+    edad_texto: payload.edad,
+    sexo: payload.sexo,
+    fecha_ingreso: payload.ingreso || null,
+    peso_inicial_kg: parsePesoNumber(payload.peso),
+    patologias_ingreso: payload.patologias,
+    servicio_urgencia: payload.urgencia,
+    estado: payload.estado,
+    apoderado_nombre: payload.apoderado,
+    apoderado_email: payload.mail,
+    apoderado_telefono: payload.telefonoApoderado,
+    contacto_sos_nombre: payload.contactoSos,
+    contacto_sos_telefono: payload.telefonoSos
+  };
+}
+
+async function loadResidentsFromApi() {
+  try {
+    const rows = await apiRequest("/residentes");
+    replaceResidentsFromApi(rows);
+  } catch (error) {
+    console.warn("No se pudieron cargar residentes desde la API. Se usaran datos locales.", error);
+  }
+}
 
 function init() {
   renderRoleSelect();
@@ -72,7 +161,7 @@ function renderShell() {
   renderView();
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
   const email = $("loginEmail").value.trim().toLowerCase();
   const password = $("loginPassword").value.trim();
@@ -87,6 +176,7 @@ function handleLogin(event) {
   resetSessionState();
   $("loginError").textContent = "";
   renderRoleSelect();
+  await loadResidentsFromApi();
   renderAuthState();
 }
 
@@ -461,19 +551,28 @@ function saveResidentDraft(id) {
     urgencia: $("resUrgencia").value.trim(),
     estado: $("resEstado").value
   };
-  openModal("Confirmar ficha residente", id ? "Desea guardar los cambios de este residente?" : "Desea crear este nuevo residente?", () => {
-    if (id) {
-      const resident = RESIDENTES.find((r) => r.id === id);
-      Object.assign(resident, payload);
-      state.residentId = id;
+  openModal("Confirmar ficha residente", id ? "Desea guardar los cambios de este residente?" : "Desea crear este nuevo residente?", () => persistResidentDraft(id, payload));
+}
+
+async function persistResidentDraft(id, payload) {
+  try {
+    const saved = await apiRequest(id ? `/residentes/${id}` : "/residentes", {
+      method: id ? "PUT" : "POST",
+      body: JSON.stringify(residentToApiPayload(payload))
+    });
+    const normalized = normalizeApiResident(saved);
+    const existingIndex = RESIDENTES.findIndex((resident) => resident.id === normalized.id);
+    if (existingIndex >= 0) {
+      RESIDENTES.splice(existingIndex, 1, normalized);
     } else {
-      const nextId = Math.max(...RESIDENTES.map((r) => r.id)) + 1;
-      RESIDENTES.push({ id: nextId, ...payload });
-      state.residentId = nextId;
+      RESIDENTES.push(normalized);
     }
+    state.residentId = normalized.id;
     state.view = "bdresidentes";
     renderShell();
-  });
+  } catch (error) {
+    openModal("No se pudo guardar", `El residente no fue guardado en la base de datos. Detalle: ${error.message}`);
+  }
 }
 
 function attachResidentSearch() {
