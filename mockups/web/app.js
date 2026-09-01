@@ -496,7 +496,43 @@ function field(label, value) {
 
 function formatFieldValue(label, value) {
   if (/peso|imc/i.test(String(label || ""))) return formatDecimalText(value);
+  if (/patolog/i.test(String(label || ""))) return value || "No informado";
   return value;
+}
+
+function normalizedText(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function residentRequiresHgt(resident) {
+  const patologias = normalizedText(resident?.patologias || resident?.patologias_ingreso || "");
+  return /\bdiabet|diabetes|hiperglic|hipergluc|glicemia|glucosa/.test(patologias);
+}
+
+function cycleHgtField(id, resident) {
+  const hidden = residentRequiresHgt(resident) ? "" : " hidden";
+  return `<div id="${id}Wrap" class="hgt-field${hidden}">
+    <label>HGT / Glucosa mg/dL</label>
+    <input id="${id}" type="number" min="20" max="1000" step="1" placeholder="110">
+  </div>`;
+}
+
+function updateHgtRequirement(selectId, hgtId) {
+  const select = $(selectId);
+  const hgt = $(hgtId);
+  const wrap = $(`${hgtId}Wrap`);
+  if (!select || !hgt || !wrap) return;
+  const resident = RESIDENTES.find((r) => r.id === Number(select.value));
+  const requiresHgt = residentRequiresHgt(resident);
+  wrap.classList.toggle("hidden", !requiresHgt);
+  hgt.required = requiresHgt;
+  if (!requiresHgt) hgt.value = "";
+}
+
+function cycleDetailText({ temp, spo2, pa, hgt, includeHgt }) {
+  const parts = [`Temp ${temp || "-"} C`, `Sat ${spo2 || "-"}%`, `PA ${pa || "-"}`];
+  if (includeHgt) parts.push(`HGT ${hgt || "-"}`);
+  return parts.join(", ");
 }
 
 function formatDecimalText(value) {
@@ -706,6 +742,9 @@ function normalizeSearch(value) {
 function renderFormularioCam(view, editContext = null) {
   const isEdit = Boolean(editContext);
   const isReadOnly = Boolean(editContext?.readonly);
+  const currentResident = isEdit
+    ? RESIDENTES.find((item) => item.nombre === editContext.row.residente) || selectedResident()
+    : selectedResident();
   view.dataset.readonly = isReadOnly ? "true" : "false";
   const title = isReadOnly ? "Ver registro CAM" : isEdit ? "Editar registro CAM" : "Registro CAM";
   const subtitle = isReadOnly ? "Vista de solo lectura del registro ingresado." : isEdit ? "Formulario completo precargado para corregir el registro seleccionado." : "Formulario modular: control de ciclos, medicamentos y observaciones segun corresponda.";
@@ -736,7 +775,7 @@ function renderFormularioCam(view, editContext = null) {
         <div><label>Temperatura C</label><input id="camTemp" inputmode="decimal" placeholder="36,8"></div>
         <div><label>Saturación %</label><input id="camSpo2" type="number" min="0" max="100" step="1" placeholder="96"></div>
         <div><label>Presión arterial mmHg</label>${pressureInputs("camPa")}</div>
-        <div><label>HGT / Glucosa mg/dL</label><input id="camHgt" type="number" min="20" max="1000" step="1" placeholder="110"></div>
+        ${cycleHgtField("camHgt", currentResident)}
       </div>
       ${isReadOnly ? "" : `<div class="form-actions compact-actions">
         <button class="btn ghost" type="button" onclick="clearCamCycles()">Limpiar datos</button>
@@ -797,9 +836,11 @@ function renderFormularioCam(view, editContext = null) {
     ${isEdit ? `<button class="btn ghost" onclick="go('${editContext.returnView}')">${isReadOnly ? "Volver" : "Cancelar"}</button>` : ""}`;
   bindToggles();
   bindCamDateRules();
+  bindCamResidentRules();
   bindMudaReason();
   bindDecimalCommaValidation(["camTemp"]);
   if (editContext) hydrateCamForm(editContext.row);
+  updateHgtRequirement("camResidente", "camHgt");
   if (isReadOnly) lockForm(view);
 }
 
@@ -866,6 +907,16 @@ function bindMudaReason() {
   update();
 }
 
+function bindCamResidentRules() {
+  const select = $("camResidente");
+  if (!select) return;
+  select.addEventListener("change", () => {
+    updateHgtRequirement("camResidente", "camHgt");
+    updateCamToggleSummaries();
+  });
+  updateHgtRequirement("camResidente", "camHgt");
+}
+
 function hydrateCamForm(row) {
   const [fecha = todayIso(), hora = currentTimeInput()] = String(row.fecha || "").split(" ");
   const resident = RESIDENTES.find((item) => item.nombre === row.residente) || RESIDENTES[0];
@@ -890,6 +941,7 @@ function hydrateCamForm(row) {
     setPressureValue("camPa", cycles.pa);
     setValue("camHgt", cycles.hgt);
   }
+  updateHgtRequirement("camResidente", "camHgt");
   if (med.hasData) {
     setToggleChecked("chkMed", true);
     setValue("camHoraMed", med.hora);
@@ -1048,11 +1100,12 @@ function updateCamToggleSummaries() {
 
 function camCycleSummary() {
   const pa = pressureValue("camPa");
+  const resident = RESIDENTES.find((r) => r.id === Number($("camResidente")?.value));
   const values = [
     $("camTemp")?.value ? `Temp ${$("camTemp").value} C` : "",
     $("camSpo2")?.value ? `Sat ${$("camSpo2").value}%` : "",
     pa ? `PA ${pa}` : "",
-    $("camHgt")?.value ? `HGT ${$("camHgt").value}` : ""
+    residentRequiresHgt(resident) && $("camHgt")?.value ? `HGT ${$("camHgt").value}` : ""
   ].filter(Boolean);
   return values.join(" · ");
 }
@@ -1161,7 +1214,8 @@ function confirmCam(editIndex = null) {
     if (!$("camTemp").value) faltantes.push("temperatura");
     if (!$("camSpo2").value) faltantes.push("saturacion");
     if (!pressureValue("camPa")) faltantes.push("presion arterial sistolica y diastolica");
-    if (!$("camHgt").value) faltantes.push("HGT / glucosa");
+    const resident = RESIDENTES.find((r) => r.id === Number($("camResidente").value));
+    if (residentRequiresHgt(resident) && !$("camHgt").value) faltantes.push("HGT / glucosa");
   }
   if (hasMedicationData && !$("camMed").value.trim()) faltantes.push("nombre medicamento");
   if (hasPositionData && !$("camPosicion").value) faltantes.push("cambio de posicion");
@@ -1183,7 +1237,8 @@ function confirmCam(editIndex = null) {
     tempId: "camTemp",
     spo2Id: "camSpo2",
     pressurePrefix: "camPa",
-    hgtId: "camHgt"
+    hgtId: "camHgt",
+    requireHgt: residentRequiresHgt(RESIDENTES.find((r) => r.id === Number($("camResidente").value)))
   }) : "";
   if (vitalError) {
     openModal("Valor no permitido", vitalError);
@@ -1195,6 +1250,7 @@ function confirmCam(editIndex = null) {
     return;
   }
   const resident = RESIDENTES.find((r) => r.id === Number($("camResidente").value));
+  const requiresHgt = residentRequiresHgt(resident);
   openModal(editIndex === null ? "Confirmar registro CAM" : "Confirmar cambios CAM", editIndex === null ? `Esta seguro que desea agregar este registro al residente ${resident.nombre}?` : `Esta seguro que desea guardar los cambios del registro de ${resident.nombre}?`, async () => {
     const registro = {
       fecha: `${$("camFecha").value} ${$("camHora").value}`,
@@ -1213,7 +1269,7 @@ function confirmCam(editIndex = null) {
       cicloTemp: hasCycleData ? $("camTemp").value : "",
       cicloSpo2: hasCycleData ? $("camSpo2").value : "",
       cicloPa: hasCycleData ? pressureValue("camPa") : "",
-      cicloHgt: hasCycleData ? $("camHgt").value : "",
+      cicloHgt: hasCycleData && requiresHgt ? $("camHgt").value : "",
       medicamento: hasMedicationData ? ($("camMed").value || "Medicamento sin nombre") : "",
       horaMedicamento: hasMedicationData ? ($("camHoraMed").value || "") : "",
       posicion: hasPositionData ? $("camPosicion").value : "",
@@ -1272,7 +1328,16 @@ function camTipo() {
 
 function camDetalle() {
   const parts = [];
-  if ($("chkCiclos").checked || camCyclesActive()) parts.push(`Control registrado. Temp ${$("camTemp").value || "-"} C, Sat ${$("camSpo2").value || "-"}%, PA ${pressureValue("camPa") || "-"}, HGT ${$("camHgt").value || "-"}.`);
+  if ($("chkCiclos").checked || camCyclesActive()) {
+    const resident = RESIDENTES.find((r) => r.id === Number($("camResidente").value));
+    parts.push(`Control registrado. ${cycleDetailText({
+      temp: $("camTemp").value,
+      spo2: $("camSpo2").value,
+      pa: pressureValue("camPa"),
+      hgt: $("camHgt").value,
+      includeHgt: residentRequiresHgt(resident)
+    })}.`);
+  }
   parts.push(`Diuresis: ${$("camDiuresisResultado").value}. Deposición: ${$("camDeposicionResultado").value}.`);
   if (camMedicationActive()) parts.push(`Medicamento ${$("camMed").value || "sin nombre"} a las ${$("camHoraMed").value || "--:--"}.`);
   if (camPositionActive()) parts.push(`Cambio de posición: ${$("camPosicion").value} a las ${$("camHoraPosicion").value || "--:--"}.`);
@@ -1462,7 +1527,7 @@ function renderFormularioProfesional(rol, editContext = null) {
         <div><label>Temperatura C</label><input id="proTemp" inputmode="decimal" placeholder="36,8"></div>
         <div><label>Saturación %</label><input id="proSpo2" type="number" min="0" max="100" step="1" placeholder="96"></div>
         <div><label>Presión arterial mmHg</label>${pressureInputs("proPa")}</div>
-        <div><label>HGT / Glucosa mg/dL</label><input id="proHgt" type="number" min="20" max="1000" step="1" placeholder="110"></div>
+        ${cycleHgtField("proHgt", selectedResident())}
         <div><label>Observacion ciclos</label><input id="proObsCiclos" placeholder="Opcional"></div>
       </div>
     </div>
@@ -1524,7 +1589,10 @@ function renderFormularioProfesional(rol, editContext = null) {
   $("proResidente").addEventListener("change", () => {
     const resident = RESIDENTES.find((r) => r.id === Number($("proResidente").value));
     $("proFicha").innerHTML = residentProfile(resident);
+    updateHgtRequirement("proResidente", "proHgt");
+    updateProfessionalToggleSummaries();
   });
+  updateHgtRequirement("proResidente", "proHgt");
   bindProfessionalDateRules();
   bindProfessionalToggles();
   bindProfessionalMudaReason();
@@ -1542,12 +1610,16 @@ function confirmProfesional(rol, editIndex = null) {
   const hasMudaData = professionalMudaActive();
   const hasObservationData = professionalObservationActive();
   const dateError = validateProfessionalDate();
+  const requiresHgt = residentRequiresHgt(resident);
   if (dateError) {
     openModal("Fecha no permitida", dateError);
     return;
   }
-  if (incluyeCiclos && !professionalCyclesValid()) {
-    openModal("Toma de ciclos", "Debe completar temperatura, saturacion, presion arterial sistolica y diastolica, y HGT/Glucosa para guardar la toma de ciclos.");
+  if (incluyeCiclos && !professionalCyclesValid(requiresHgt)) {
+    const requiredText = requiresHgt
+      ? "temperatura, saturacion, presion arterial sistolica y diastolica, y HGT/Glucosa"
+      : "temperatura, saturacion y presion arterial sistolica y diastolica";
+    openModal("Toma de ciclos", `Debe completar ${requiredText} para guardar la toma de ciclos.`);
     return;
   }
   const faltantes = [];
@@ -1571,7 +1643,8 @@ function confirmProfesional(rol, editIndex = null) {
     tempId: "proTemp",
     spo2Id: "proSpo2",
     pressurePrefix: "proPa",
-    hgtId: "proHgt"
+    hgtId: "proHgt",
+    requireHgt: requiresHgt
   }) : "";
   if (vitalError) {
     openModal("Valor no permitido", vitalError);
@@ -1595,7 +1668,7 @@ function confirmProfesional(rol, editIndex = null) {
       cicloTemp: incluyeCiclos ? $("proTemp").value : "",
       cicloSpo2: incluyeCiclos ? $("proSpo2").value : "",
       cicloPa: incluyeCiclos ? pressureValue("proPa") : "",
-      cicloHgt: incluyeCiclos ? $("proHgt").value : "",
+      cicloHgt: incluyeCiclos && requiresHgt ? $("proHgt").value : "",
       medicamento: hasMedicationData ? ($("proMed").value || "Medicamento sin nombre") : "",
       horaMedicamento: hasMedicationData ? ($("proHoraMed").value || "") : "",
       posicion: hasPositionData ? $("proPosicion").value : "",
@@ -1692,6 +1765,7 @@ function hydrateProfessionalForm(row) {
     setPressureValue("proPa", cycles.pa);
     setValue("proHgt", cycles.hgt);
   }
+  updateHgtRequirement("proResidente", "proHgt");
   if (med.hasData) {
     setToggleChecked("chkProMed", true);
     setValue("proHoraMed", med.hora);
@@ -1761,11 +1835,12 @@ function updateProfessionalToggleSummaries() {
 
 function professionalCycleSummary() {
   const pa = pressureValue("proPa");
+  const resident = RESIDENTES.find((r) => r.id === Number($("proResidente")?.value));
   const values = [
     $("proTemp")?.value ? `Temp ${$("proTemp").value} C` : "",
     $("proSpo2")?.value ? `Sat ${$("proSpo2").value}%` : "",
     pa ? `PA ${pa}` : "",
-    $("proHgt")?.value ? `HGT ${$("proHgt").value}` : ""
+    residentRequiresHgt(resident) && $("proHgt")?.value ? `HGT ${$("proHgt").value}` : ""
   ].filter(Boolean);
   return values.join(" · ");
 }
@@ -1817,8 +1892,8 @@ function validateProfessionalDate() {
   return "";
 }
 
-function professionalCyclesValid() {
-  return Boolean($("proTemp").value && $("proSpo2").value && pressureValue("proPa") && $("proHgt").value);
+function professionalCyclesValid(requireHgt = true) {
+  return Boolean($("proTemp").value && $("proSpo2").value && pressureValue("proPa") && (!requireHgt || $("proHgt").value));
 }
 
 function professionalCyclesActive() {
@@ -1843,13 +1918,14 @@ function professionalObservationActive() {
 
 function professionalCycleRecord(resident, rol, fechaHora) {
   const pressure = parsePressure(pressureValue("proPa"));
+  const requiresHgt = residentRequiresHgt(resident);
   return {
     residente: resident.nombre,
     fecha: fechaHora,
     temp: Number(parseDecimalValue($("proTemp").value).toFixed(1)),
     spo2: Number($("proSpo2").value),
     pad: pressure.diastolica,
-    hgt: Number($("proHgt").value),
+    hgt: requiresHgt ? Number($("proHgt").value) : null,
     origen: rol,
     usuario: rol === "Enfermero" ? "enfermero@hogarantu.cl" : "dt@hogarantu.cl",
     observacion: $("proObsCiclos").value || "Toma de ciclos profesional."
@@ -1857,7 +1933,15 @@ function professionalCycleRecord(resident, rol, fechaHora) {
 }
 
 function professionalCyclesDetail() {
-  return `Temp ${$("proTemp").value} C, Sat ${$("proSpo2").value}%, PA ${pressureValue("proPa")}, HGT ${$("proHgt").value}. ${$("proObsCiclos").value || ""}`.trim();
+  const resident = RESIDENTES.find((r) => r.id === Number($("proResidente").value));
+  const detail = cycleDetailText({
+    temp: $("proTemp").value,
+    spo2: $("proSpo2").value,
+    pa: pressureValue("proPa"),
+    hgt: $("proHgt").value,
+    includeHgt: residentRequiresHgt(resident)
+  });
+  return `${detail}. ${$("proObsCiclos").value || ""}`.trim();
 }
 
 function professionalDespicheDetail() {
@@ -1878,7 +1962,7 @@ function professionalRecordDetail(registro, incluyeCiclos) {
   return parts.join(" ");
 }
 
-function validateCycleNumbers({ tempId, spo2Id, pressurePrefix, hgtId }) {
+function validateCycleNumbers({ tempId, spo2Id, pressurePrefix, hgtId, requireHgt = true }) {
   const tempText = $(tempId)?.value;
   const temp = parseDecimalValue(tempText);
   const spo2 = Number($(spo2Id)?.value);
@@ -1899,7 +1983,7 @@ function validateCycleNumbers({ tempId, spo2Id, pressurePrefix, hgtId }) {
   if (pressure.diastolica >= pressure.sistolica) {
     return "La presion diastolica debe ser menor que la sistolica.";
   }
-  if (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000) {
+  if (requireHgt && (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000)) {
     return "El HGT / glucosa debe estar entre 20 y 1000 mg/dL.";
   }
   return "";
