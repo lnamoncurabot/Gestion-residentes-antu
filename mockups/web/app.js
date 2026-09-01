@@ -123,6 +123,103 @@ async function loadResidentsFromApi() {
   }
 }
 
+async function loadRegistrosFromApi() {
+  try {
+    const data = await apiRequest("/registros");
+    if (Array.isArray(data?.cam)) {
+      REGISTROS_CAM.splice(0, REGISTROS_CAM.length, ...data.cam.map(normalizeCamRegistro));
+    }
+    if (Array.isArray(data?.pro)) {
+      REGISTROS_PRO.splice(0, REGISTROS_PRO.length, ...data.pro.map(normalizeProRegistro));
+    }
+    if (Array.isArray(data?.nutri)) {
+      REGISTROS_NUTRI.splice(0, REGISTROS_NUTRI.length, ...data.nutri.map(normalizeNutriRegistro));
+    }
+  } catch (error) {
+    console.warn("No se pudieron cargar registros desde la API. Se usaran datos locales.", error);
+  }
+}
+
+function formatApiDateTime(value) {
+  if (!value) return "";
+  return String(value).replace("T", " ").slice(0, 16);
+}
+
+function normalizeCamRegistro(row) {
+  return {
+    id: row.id,
+    fecha: formatApiDateTime(row.fecha_hora || row.fecha),
+    residente: row.residente || "",
+    usuario: row.usuario || "cuidadoras@hogarantu.cl",
+    turno: row.turno || "Dia",
+    cuidadora: row.nombre_cuidadora || row.cuidadora || "",
+    tipo: row.tipo_registro || row.tipo || "Registro CAM",
+    detalle: row.observaciones || row.detalle || "",
+    editable: true
+  };
+}
+
+function normalizeProRegistro(row) {
+  const datos = typeof row.datos_json === "string" ? JSON.parse(row.datos_json || "{}") : row.datos_json || {};
+  return {
+    ...(datos || {}),
+    id: row.id,
+    fecha: formatApiDateTime(row.fecha_hora || row.fecha),
+    residente: row.residente || datos.residente || "",
+    rol: row.rol_profesional || row.rol || datos.rol || "Enfermero",
+    usuario: row.usuario || datos.usuario || "enfermero@hogarantu.cl",
+    registro: row.evolucion || row.registro || datos.registro || "Registro sin detalle.",
+    editable: true
+  };
+}
+
+function normalizeNutriRegistro(row) {
+  const datos = typeof row.datos_json === "string" ? JSON.parse(row.datos_json || "{}") : row.datos_json || {};
+  return {
+    ...(datos || {}),
+    id: row.id,
+    fecha: formatApiDateTime(row.fecha_hora || row.fecha),
+    residente: row.residente || datos.residente || "",
+    imc: row.imc ?? datos.imc ?? "-",
+    observacion: row.observaciones || row.observacion || datos.observacion || "Sin observaciones.",
+    editable: true
+  };
+}
+
+function registroToApiPayload(origen, resident, registro) {
+  return {
+    origen,
+    residente_id: resident.id,
+    usuario_email: registro.usuario || state.loggedUser,
+    fecha_hora: registro.fecha,
+    turno: registro.turno,
+    cuidadora: registro.cuidadora,
+    tipo: registro.tipo,
+    detalle: registro.detalle,
+    rol: registro.rol,
+    registro: registro.registro,
+    imc: registro.imc,
+    observacion: registro.observacion,
+    peso_kg: parsePesoNumber(resident.peso),
+    talla_m: parsePesoNumber(registro.talla),
+    cicloTemp: registro.cicloTemp,
+    cicloSpo2: registro.cicloSpo2,
+    cicloPa: registro.cicloPa,
+    cicloHgt: registro.cicloHgt,
+    medicamento: registro.medicamento,
+    horaMedicamento: registro.horaMedicamento,
+    datos: registro
+  };
+}
+
+async function persistRegistro(origen, resident, registro) {
+  const saved = await apiRequest("/registros", {
+    method: "POST",
+    body: JSON.stringify(registroToApiPayload(origen, resident, registro))
+  });
+  return { ...registro, id: saved.id };
+}
+
 function init() {
   renderRoleSelect();
   $("loginForm").addEventListener("submit", handleLogin);
@@ -177,6 +274,7 @@ async function handleLogin(event) {
   $("loginError").textContent = "";
   renderRoleSelect();
   await loadResidentsFromApi();
+  await loadRegistrosFromApi();
   renderAuthState();
 }
 
@@ -1097,7 +1195,7 @@ function confirmCam(editIndex = null) {
     return;
   }
   const resident = RESIDENTES.find((r) => r.id === Number($("camResidente").value));
-  openModal(editIndex === null ? "Confirmar registro CAM" : "Confirmar cambios CAM", editIndex === null ? `Esta seguro que desea agregar este registro al residente ${resident.nombre}?` : `Esta seguro que desea guardar los cambios del registro de ${resident.nombre}?`, () => {
+  openModal(editIndex === null ? "Confirmar registro CAM" : "Confirmar cambios CAM", editIndex === null ? `Esta seguro que desea agregar este registro al residente ${resident.nombre}?` : `Esta seguro que desea guardar los cambios del registro de ${resident.nombre}?`, async () => {
     const registro = {
       fecha: `${$("camFecha").value} ${$("camHora").value}`,
       residente: resident.nombre,
@@ -1127,13 +1225,17 @@ function confirmCam(editIndex = null) {
       detalle: camDetalle(),
       editable: true
     };
-    if (editIndex === null) {
-      REGISTROS_CAM.unshift(registro);
-    } else {
-      REGISTROS_CAM[editIndex] = { ...REGISTROS_CAM[editIndex], ...registro };
+    try {
+      if (editIndex === null) {
+        REGISTROS_CAM.unshift(await persistRegistro("cam", resident, registro));
+      } else {
+        REGISTROS_CAM[editIndex] = { ...REGISTROS_CAM[editIndex], ...registro };
+      }
+      state.view = editIndex === null ? "misRegistrosCam" : (state.editReturnView || "misRegistrosCam");
+      renderShell();
+    } catch (error) {
+      openModal("No se pudo guardar", `El registro CAM no fue guardado en la base de datos. Detalle: ${error.message}`);
     }
-    state.view = editIndex === null ? "misRegistrosCam" : (state.editReturnView || "misRegistrosCam");
-    renderShell();
   });
 }
 
@@ -1475,7 +1577,7 @@ function confirmProfesional(rol, editIndex = null) {
     openModal("Valor no permitido", vitalError);
     return;
   }
-  openModal(`Confirmar registro ${rol}`, `Esta seguro que desea ${editIndex === null ? "agregar" : "actualizar"} este registro al residente ${resident.nombre}?`, () => {
+  openModal(`Confirmar registro ${rol}`, `Esta seguro que desea ${editIndex === null ? "agregar" : "actualizar"} este registro al residente ${resident.nombre}?`, async () => {
     const registro = $("proTexto").value || "Registro sin detalle.";
     const payload = {
       fecha: fechaHora,
@@ -1504,16 +1606,20 @@ function confirmProfesional(rol, editIndex = null) {
       observacionCam: hasObservationData ? $("proObs").value.trim() : "",
       editable: true
     };
-    if (editIndex === null) {
-      REGISTROS_PRO.unshift(payload);
-    } else {
-      Object.assign(REGISTROS_PRO[editIndex], payload);
+    try {
+      if (editIndex === null) {
+        REGISTROS_PRO.unshift(await persistRegistro("pro", resident, payload));
+      } else {
+        Object.assign(REGISTROS_PRO[editIndex], payload);
+      }
+      if (incluyeCiclos) {
+        CONTROLES_CICLOS.push(professionalCycleRecord(resident, rol, fechaHora));
+      }
+      state.view = editIndex === null ? "misRegistrosProfesional" : state.editReturnView || "misRegistrosProfesional";
+      renderShell();
+    } catch (error) {
+      openModal("No se pudo guardar", `El registro profesional no fue guardado en la base de datos. Detalle: ${error.message}`);
     }
-    if (incluyeCiclos) {
-      CONTROLES_CICLOS.push(professionalCycleRecord(resident, rol, fechaHora));
-    }
-    state.view = editIndex === null ? "misRegistrosProfesional" : state.editReturnView || "misRegistrosProfesional";
-    renderShell();
   });
 }
 
@@ -2305,16 +2411,21 @@ function confirmNutri() {
     openModal("Separador decimal", decimalError);
     return;
   }
-  openModal("Confirmar registro nutricional", `Esta seguro que desea agregar este registro nutricional al residente ${resident.nombre}?`, () => {
-    REGISTROS_NUTRI.unshift({
+  openModal("Confirmar registro nutricional", `Esta seguro que desea agregar este registro nutricional al residente ${resident.nombre}?`, async () => {
+    const registro = {
       fecha: `${$("nutriFecha").value || "2026-06-14"} ${$("nutriHora").value || "12:00"}`,
       residente: resident.nombre,
       imc: $("nutriImc").value || "-",
       observacion: $("nutriObs").value || "Sin observaciones.",
       editable: true
-    });
-    state.view = "misRegistrosNutri";
-    renderShell();
+    };
+    try {
+      REGISTROS_NUTRI.unshift(await persistRegistro("nutri", resident, registro));
+      state.view = "misRegistrosNutri";
+      renderShell();
+    } catch (error) {
+      openModal("No se pudo guardar", `El registro nutricional no fue guardado en la base de datos. Detalle: ${error.message}`);
+    }
   });
 }
 
