@@ -1395,8 +1395,25 @@ function valueForHeader(row, header) {
   }[header];
   const value = row[key] || "";
   if (header === "Tipo") return displayRegistroTipo(value);
+  if (header === "Observacion" && isNutriRecord(row)) return nutritionSummary(row);
   if (["Detalle", "Registro", "Observacion"].includes(header)) return recordChecklistDetail(row);
   return header === "IMC" ? formatDecimalText(value) : value;
+}
+
+function isNutriRecord(row) {
+  return Boolean(row && (row.imc || row.talla || row.cc || row.cb || row.pt || row.cp || row.observacion) && !row.detalle && !row.registro);
+}
+
+function nutritionSummary(row) {
+  return [
+    row.talla ? `Talla ${formatDecimalText(row.talla)}` : "",
+    row.imc ? `IMC ${formatDecimalText(row.imc)}` : "",
+    row.cc ? `CC ${row.cc}` : "",
+    row.cb ? `CB ${row.cb}` : "",
+    row.pt ? `PT ${row.pt}` : "",
+    row.cp ? `CP ${row.cp}` : "",
+    row.observacion || ""
+  ].filter(Boolean).join(" · ");
 }
 
 function displayRegistroTipo(tipo) {
@@ -2499,7 +2516,15 @@ function confirmNutri() {
     const registro = {
       fecha: `${$("nutriFecha").value || "2026-06-14"} ${$("nutriHora").value || "12:00"}`,
       residente: resident.nombre,
+      edad: resident.edad,
+      peso: resident.peso,
+      sexo: resident.sexo,
+      talla: $("nutriTalla").value || "",
       imc: $("nutriImc").value || "-",
+      cc: $("nutriCc").value || "",
+      cb: $("nutriCb").value || "",
+      pt: $("nutriPt").value || "",
+      cp: $("nutriCp").value || "",
       observacion: $("nutriObs").value || "Sin observaciones.",
       editable: true
     };
@@ -2599,13 +2624,17 @@ function registrosUsuariosTable() {
       <td>${origen}</td>
       <td>${row.usuario || row.rol || "nutricion@hogarantu.cl"}</td>
       <td>${row.cuidadora || "-"}</td>
-      <td>${recordChecklistDetail(row)}</td>
+      <td>${registroRowDetail(source, row)}</td>
       <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
       <td>${adminRecordActionButtons(source, index, row)}</td>
     </tr>`).join("")}</tbody>
   </table>
   ${registrosPagination(totalPages)}
   </div>`;
+}
+
+function registroRowDetail(source, row) {
+  return source === "nutri" ? nutritionSummary(row) : recordChecklistDetail(row);
 }
 
 function registrosPagination(totalPages) {
@@ -2706,6 +2735,11 @@ function renderRecordForm(source, index, returnView = "registros", requireEditab
     renderFormularioProfesional(row.rol || "Enfermero", { row, index, returnView, readonly: readOnly });
     return;
   }
+  if (source === "nutri") {
+    state.editReturnView = returnView;
+    renderNutriRecordForm(row, index, returnView, readOnly);
+    return;
+  }
   state.editReturnView = returnView;
   const detalle = row.detalle || row.registro || row.observacion || "";
   const lockAttr = readOnly ? "readonly" : "";
@@ -2730,6 +2764,61 @@ function renderRecordForm(source, index, returnView = "registros", requireEditab
         <button class="btn ghost" onclick="go('${returnView}')">${readOnly ? "Volver" : "Cancelar"}</button>
       </div>
     </div>`;
+}
+
+function renderNutriRecordForm(row, index, returnView = "registros", readOnly = false) {
+  const lockAttr = readOnly ? "readonly" : "";
+  const resident = RESIDENTES.find((r) => r.nombre === row.residente) || {};
+  const title = readOnly ? "Ver registro nutricional" : "Editar registro nutricional";
+  const help = readOnly
+    ? "Vista de solo lectura con los datos nutricionales ingresados."
+    : "Edicion administrativa del registro nutricional.";
+  $("view").innerHTML = page(title, help) +
+    `<div class="form-section">
+      <h2>Datos del residente</h2>
+      <div class="grid3">
+        <div><label>Fecha</label><input id="editNutriFecha" value="${row.fecha || ""}" ${lockAttr}></div>
+        <div><label>Residente</label><input value="${row.residente || ""}" readonly></div>
+        <div><label>Sexo</label><input value="${row.sexo || resident.sexo || ""}" readonly></div>
+        <div><label>Edad</label><input value="${row.edad || resident.edad || ""}" readonly></div>
+        <div><label>Peso inicial</label><input value="${formatDecimalText(row.peso || resident.peso || "")}" readonly></div>
+        <div><label>Usuario</label><input value="${row.usuario || "nutricion@hogarantu.cl"}" readonly></div>
+      </div>
+    </div>
+    <div class="form-section">
+      <h2>Evaluacion nutricional</h2>
+      <div class="grid3">
+        <div><label>Estatura</label><input id="editNutriTalla" value="${row.talla || ""}" ${lockAttr}></div>
+        <div><label>IMC</label><input id="editNutriImc" value="${row.imc || ""}" ${lockAttr}></div>
+        <div><label>Clasificacion CC</label><input id="editNutriCc" value="${row.cc || ""}" ${lockAttr}></div>
+        <div><label>Clasificacion CB</label><input id="editNutriCb" value="${row.cb || ""}" ${lockAttr}></div>
+        <div><label>Clasificacion PT</label><input id="editNutriPt" value="${row.pt || ""}" ${lockAttr}></div>
+        <div><label>Clasificacion CP</label><input id="editNutriCp" value="${row.cp || ""}" ${lockAttr}></div>
+      </div>
+      <label>Observaciones o indicaciones nutricionales</label>
+      <textarea id="editNutriObs" ${readOnly ? "readonly" : ""}>${row.observacion || ""}</textarea>
+      <div class="form-actions">
+        ${readOnly ? "" : `<button class="btn primary" onclick="saveNutriRecordEdit(${index})">Guardar cambios</button>`}
+        <button class="btn ghost" onclick="go('${returnView}')">${readOnly ? "Volver" : "Cancelar"}</button>
+      </div>
+    </div>`;
+}
+
+function saveNutriRecordEdit(index) {
+  openModal("Confirmar edicion", "Desea guardar los cambios de este registro nutricional?", () => {
+    const row = REGISTROS_NUTRI[index];
+    row.fecha = $("editNutriFecha").value;
+    row.talla = $("editNutriTalla").value;
+    row.imc = $("editNutriImc").value || "-";
+    row.cc = $("editNutriCc").value;
+    row.cb = $("editNutriCb").value;
+    row.pt = $("editNutriPt").value;
+    row.cp = $("editNutriCp").value;
+    row.observacion = $("editNutriObs").value || "Sin observaciones.";
+    row.editable = true;
+    state.view = state.editReturnView || "registros";
+    renderShell();
+  });
 }
 
 function hasEditableDespicheView(source, row) {
