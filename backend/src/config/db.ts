@@ -192,6 +192,17 @@ async function createPostgresSchema() {
       es_contacto_principal BOOLEAN NOT NULL DEFAULT true
     )`);
   await pool.execute(`
+    DELETE FROM apoderados a
+    USING apoderados b
+    WHERE a.residente_id = b.residente_id
+      AND a.es_contacto_principal = true
+      AND b.es_contacto_principal = true
+      AND a.id > b.id`);
+  await pool.execute(`
+    CREATE UNIQUE INDEX IF NOT EXISTS apoderados_residente_contacto_principal_idx
+    ON apoderados (residente_id)
+    WHERE es_contacto_principal = true`);
+  await pool.execute(`
     CREATE TABLE IF NOT EXISTS usuarios (
       id SERIAL PRIMARY KEY,
       nombre TEXT NOT NULL,
@@ -310,7 +321,7 @@ async function seedPostgresResidents() {
          (residente_id, nombre, telefono, email, contacto_sos_nombre, contacto_sos_telefono, es_contacto_principal)
        VALUES
          (:residenteId, :nombre, :telefono, :email, :contactoNombre, :contactoTelefono, true)
-       ON CONFLICT DO NOTHING`,
+       ON CONFLICT (residente_id) WHERE es_contacto_principal = true DO NOTHING`,
       {
         residenteId: row[0],
         nombre: row[10],
