@@ -77,7 +77,7 @@ class MySqlConnection implements DbConnection {
     return this.connection.beginTransaction();
   }
   execute<T = unknown>(sql: string, params?: QueryParams) {
-    return this.connection.execute(sql, params) as QueryResult<T>;
+    return this.connection.execute(sql, params as mysql.QueryOptions["values"]) as QueryResult<T>;
   }
   commit() {
     return this.connection.commit();
@@ -103,7 +103,7 @@ class MySqlDbPool implements DbPool {
   });
 
   execute<T = unknown>(sql: string, params?: QueryParams) {
-    return this.inner.execute(sql, params) as QueryResult<T>;
+    return this.inner.execute(sql, params as mysql.QueryOptions["values"]) as QueryResult<T>;
   }
 
   async getConnection() {
