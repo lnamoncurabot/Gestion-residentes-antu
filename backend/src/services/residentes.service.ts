@@ -162,7 +162,7 @@ export async function crearResidente(payload: ResidentePayload) {
         contacto_sos_nombre, contacto_sos_telefono, es_contacto_principal
       ) VALUES (
         :residente_id, :apoderado_nombre, :apoderado_parentesco, :apoderado_telefono, :apoderado_email,
-        :contacto_sos_nombre, :contacto_sos_telefono, 1
+        :contacto_sos_nombre, :contacto_sos_telefono, true
       )`,
       { ...data, residente_id: residenteResult.insertId }
     );
@@ -234,7 +234,7 @@ export async function actualizarResidente(id: number, payload: ResidentePayload)
           contacto_sos_nombre, contacto_sos_telefono, es_contacto_principal
         ) VALUES (
           :id, :apoderado_nombre, :apoderado_parentesco, :apoderado_telefono, :apoderado_email,
-          :contacto_sos_nombre, :contacto_sos_telefono, 1
+          :contacto_sos_nombre, :contacto_sos_telefono, true
         )`,
         { ...data, id }
       );
