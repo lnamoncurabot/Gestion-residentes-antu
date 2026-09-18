@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { initializeDatabase } from "./config/db.js";
 import { dashboardRouter } from "./routes/dashboard.routes.js";
 import { registrosRouter } from "./routes/registros.routes.js";
 import { reportesRouter } from "./routes/reportes.routes.js";
@@ -33,6 +34,13 @@ app.get("*", (_req, res) => {
   res.sendFile(path.join(staticRoot, "index.html"));
 });
 
-app.listen(port, () => {
-  console.log(`API Gestion Residentes Antu escuchando en http://localhost:${port}/api`);
-});
+initializeDatabase()
+  .then(() => {
+    app.listen(port, () => {
+      console.log(`API Gestion Residentes Antu escuchando en http://localhost:${port}/api`);
+    });
+  })
+  .catch((error) => {
+    console.error("No se pudo inicializar la base de datos.", error);
+    process.exit(1);
+  });

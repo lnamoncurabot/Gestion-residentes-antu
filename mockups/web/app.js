@@ -33,7 +33,7 @@ const DEMO_USERS = [
   { email: "enfermero@hogarantu.cl", role: "enfermero" },
   { email: "nutricion@hogarantu.cl", role: "nutricionista" }
 ];
-const API_BASE_URL = window.ANTU_API_BASE_URL || "https://gestion-residentes-antu-production-827b.up.railway.app/api";
+const API_BASE_URL = window.ANTU_API_BASE_URL || "https://gestion-residentes-antu-api.onrender.com/api";
 
 async function apiRequest(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
