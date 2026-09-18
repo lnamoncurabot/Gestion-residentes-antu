@@ -28,6 +28,20 @@ type ResidentePayload = {
   contacto_sos_telefono?: string | null;
 };
 
+function normalizarFecha(fecha?: string | null) {
+  const value = String(fecha || "").trim();
+  if (!value) return null;
+
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return value;
+
+  const localMatch = value.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+  if (!localMatch) return value;
+
+  const [, day, month, year] = localMatch;
+  return `${year}-${month}-${day}`;
+}
+
 function normalizarResidentePayload(payload: ResidentePayload) {
   const nombre = String(payload.nombre_completo || "").trim();
   const rut = String(payload.rut || "").trim();
@@ -53,10 +67,10 @@ function normalizarResidentePayload(payload: ResidentePayload) {
   return {
     nombre_completo: nombre,
     rut,
-    fecha_nacimiento: payload.fecha_nacimiento || null,
+    fecha_nacimiento: normalizarFecha(payload.fecha_nacimiento),
     edad_texto: payload.edad_texto || null,
     sexo,
-    fecha_ingreso: payload.fecha_ingreso || null,
+    fecha_ingreso: normalizarFecha(payload.fecha_ingreso),
     peso_inicial_kg: payload.peso_inicial_kg ?? null,
     patologias_ingreso: payload.patologias_ingreso || null,
     alergias: payload.alergias || null,
