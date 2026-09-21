@@ -492,15 +492,11 @@ button.btn {
   transform: translateY(-1px);
 }
 
-.toggle-card input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
 .toggle-card-main {
   display: grid;
   gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .toggle-card-main strong {
@@ -528,6 +524,30 @@ button.btn {
   display: none;
 }
 
+.toggle-enable {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-enable input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
 .toggle-card-mark {
   display: grid;
   place-items: center;
@@ -540,6 +560,7 @@ button.btn {
   color: var(--teal-dark);
   font-size: 18px;
   font-weight: 900;
+  cursor: pointer;
 }
 
 .toggle-card.active {
@@ -550,6 +571,9 @@ button.btn {
 
 .toggle-card.active .toggle-card-mark {
   border-color: var(--teal);
+}
+
+.toggle-card.expanded .toggle-card-mark {
   background: var(--teal);
   color: #fff;
 }

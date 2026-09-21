@@ -872,15 +872,18 @@ function toggle(id, label) {
     chkProMudas: "Registro Si/No y horario de muda.",
     chkProObs: "Comentarios adicionales del cuidado."
   };
-  return `<label class="toggle-card" for="${id}">
-    <input type="checkbox" id="${id}">
+  return `<div class="toggle-card" data-toggle-card="${id}">
     <span class="toggle-card-main">
       <strong>${label}</strong>
       <small>${details[id] || "Haga clic para desplegar el formulario."}</small>
       <span class="toggle-card-summary" id="${id}Summary"></span>
     </span>
-    <span class="toggle-card-mark" aria-hidden="true">+</span>
-  </label>`;
+    <label class="toggle-enable">
+      <input type="checkbox" id="${id}">
+      <span>Habilitar</span>
+    </label>
+    <button class="toggle-card-mark" type="button" data-toggle-button="${id}" aria-label="Mostrar u ocultar ${label}">+</button>
+  </div>`;
 }
 
 function bindToggles() {
@@ -890,18 +893,17 @@ function bindToggles() {
     if (checkbox && section) {
       const card = checkbox.closest(".toggle-card");
       const mark = card?.querySelector(".toggle-card-mark");
+      const setExpanded = (expanded) => {
+        section.classList.toggle("hidden", !expanded);
+        card?.classList.toggle("expanded", expanded);
+        if (mark) mark.textContent = expanded ? "−" : "+";
+      };
       const updateToggle = () => {
-        section.classList.toggle("hidden", !checkbox.checked);
         card?.classList.toggle("active", checkbox.checked);
-        if (mark) mark.textContent = checkbox.checked ? "✓" : "+";
-        if (checkbox.checked && chk === "chkPosicion" && $("camHoraPosicion") && !$("camHoraPosicion").value) {
-          $("camHoraPosicion").value = $("camHora")?.value || "";
-        }
-        if (checkbox.checked && chk === "chkMudas" && $("camHoraMuda") && !$("camHoraMuda").value) {
-          $("camHoraMuda").value = $("camHora")?.value || "";
-        }
+        if (checkbox.checked) setExpanded(true);
         updateCamToggleSummaries();
       };
+      mark?.addEventListener("click", () => setExpanded(section.classList.contains("hidden")));
       checkbox.addEventListener("change", updateToggle);
       updateToggle();
     }
@@ -1160,6 +1162,7 @@ function camEliminacionSummary() {
 }
 
 function camCycleSummary() {
+  if (!$("chkCiclos")?.checked) return "";
   const pa = pressureValue("camPa");
   const resident = RESIDENTES.find((r) => r.id === Number($("camResidente")?.value));
   const values = [
@@ -1172,6 +1175,7 @@ function camCycleSummary() {
 }
 
 function camMedicationSummary() {
+  if (!$("chkMed")?.checked) return "";
   const med = $("camMed")?.value?.trim();
   const hora = $("camHoraMed")?.value;
   if (!med && !hora) return "";
@@ -1179,25 +1183,26 @@ function camMedicationSummary() {
 }
 
 function camPositionSummary() {
+  if (!$("chkPosicion")?.checked) return "";
   const resultado = $("camCambioPosicion")?.value || "Si";
   const posicion = $("camPosicion")?.value;
   const hora = $("camHoraPosicion")?.value;
   const motivo = $("camPosicionMotivo")?.value?.trim();
-  if (!$("chkPosicion")?.checked && !hora && !motivo) return "";
   return resultado === "No"
     ? ["Cambio: No", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ")
     : [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
 }
 
 function camMudaSummary() {
+  if (!$("chkMudas")?.checked) return "";
   const muda = $("camMuda")?.value;
   const hora = $("camHoraMuda")?.value;
   const motivo = $("camMudaMotivo")?.value?.trim();
-  if (!$("chkMudas")?.checked && !hora && !motivo) return "";
   return [`Muda: ${muda || "-"}`, hora ? `Hora: ${hora}` : "", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ");
 }
 
 function camObservationSummary() {
+  if (!$("chkObs")?.checked) return "";
   const obs = $("camObs")?.value?.trim();
   if (!obs) return "";
   return obs.length > 120 ? `${obs.slice(0, 117)}...` : obs;
@@ -1279,13 +1284,6 @@ function confirmCam(editIndex = null) {
   if (!hasEliminacionData && !hasCycleData && !hasMedicationData && !hasPositionData && !hasMudaData && !hasObservationData) {
     faltantes.push("al menos una categoria habilitada con datos");
   }
-  if (hasCycleData) {
-    if (!$("camTemp").value) faltantes.push("temperatura");
-    if (!$("camSpo2").value) faltantes.push("saturacion");
-    if (!pressureValue("camPa")) faltantes.push("presion arterial sistolica y diastolica");
-    const resident = RESIDENTES.find((r) => r.id === Number($("camResidente").value));
-    if (residentRequiresHgt(resident) && !$("camHgt").value) faltantes.push("HGT / glucosa");
-  }
   if (hasMedicationData && !$("camMed").value.trim()) faltantes.push("nombre medicamento");
   if (hasMedicationData && !$("camHoraMed").value) faltantes.push("hora de administracion de medicamento");
   if (hasPositionData && $("camCambioPosicion").value === "Si" && !$("camPosicion").value) faltantes.push("cambio de posicion");
@@ -1362,6 +1360,7 @@ function confirmCam(editIndex = null) {
       }
       state.view = editIndex === null ? "misRegistrosCam" : (state.editReturnView || "misRegistrosCam");
       renderShell();
+      openModal("Guardado con éxito", "El registro fue guardado correctamente.");
     } catch (error) {
       openModal("No se pudo guardar", `El registro CAM no fue guardado en la base de datos. Detalle: ${error.message}`);
     }
@@ -1369,7 +1368,7 @@ function confirmCam(editIndex = null) {
 }
 
 function camCyclesActive() {
-  return Boolean($("chkCiclos")?.checked);
+  return Boolean($("chkCiclos")?.checked) && ["camTemp", "camSpo2", "camPaSistolica", "camPaDiastolica", "camHgt"].some((id) => Boolean($(id)?.value));
 }
 
 function camMedicationActive() {
@@ -1715,7 +1714,7 @@ function renderFormularioProfesional(rol, editContext = null) {
 function confirmProfesional(rol, editIndex = null) {
   const resident = RESIDENTES.find((r) => r.id === Number($("proResidente").value));
   const fechaHora = `${$("proFecha").value || "2026-06-14"} ${$("proHora").value || "10:00"}`;
-  const incluyeCiclos = $("chkProCiclos").checked || professionalCyclesActive();
+  const incluyeCiclos = professionalCyclesActive();
   const hasMedicationData = professionalMedicationActive();
   const hasPositionData = professionalPositionActive();
   const hasMudaData = professionalMudaActive();
@@ -1730,13 +1729,6 @@ function confirmProfesional(rol, editIndex = null) {
   }
   if (!hasMainText && !hasEliminacionData && !incluyeCiclos && !hasMedicationData && !hasPositionData && !hasMudaData && !hasObservationData) {
     openModal("Registro vacio", "Debe habilitar y completar al menos una categoria, o escribir una evolucion / registro antes de guardar.");
-    return;
-  }
-  if (incluyeCiclos && !professionalCyclesValid(requiresHgt)) {
-    const requiredText = requiresHgt
-      ? "temperatura, saturacion, presion arterial sistolica y diastolica, y HGT/Glucosa"
-      : "temperatura, saturacion y presion arterial sistolica y diastolica";
-    openModal("Toma de ciclos", `Debe completar ${requiredText} para guardar la toma de ciclos.`);
     return;
   }
   const faltantes = [];
@@ -1811,6 +1803,7 @@ function confirmProfesional(rol, editIndex = null) {
       }
       state.view = editIndex === null ? "misRegistrosProfesional" : state.editReturnView || "misRegistrosProfesional";
       renderShell();
+      openModal("Guardado con éxito", "El registro fue guardado correctamente.");
     } catch (error) {
       openModal("No se pudo guardar", `El registro profesional no fue guardado en la base de datos. Detalle: ${error.message}`);
     }
@@ -1831,18 +1824,17 @@ function bindProfessionalToggles() {
     if (!checkbox || !section) return;
     const card = checkbox.closest(".toggle-card");
     const mark = card?.querySelector(".toggle-card-mark");
+    const setExpanded = (expanded) => {
+      section.classList.toggle("hidden", !expanded);
+      card?.classList.toggle("expanded", expanded);
+      if (mark) mark.textContent = expanded ? "−" : "+";
+    };
     const update = () => {
-      section.classList.toggle("hidden", !checkbox.checked);
       card?.classList.toggle("active", checkbox.checked);
-      if (mark) mark.textContent = checkbox.checked ? "✓" : "+";
-      if (checkbox.checked && chk === "chkProPosicion" && $("proHoraPosicion") && !$("proHoraPosicion").value) {
-        $("proHoraPosicion").value = $("proHora")?.value || "";
-      }
-      if (checkbox.checked && chk === "chkProMudas" && $("proHoraMuda") && !$("proHoraMuda").value) {
-        $("proHoraMuda").value = $("proHora")?.value || "";
-      }
+      if (checkbox.checked) setExpanded(true);
       updateProfessionalToggleSummaries();
     };
+    mark?.addEventListener("click", () => setExpanded(section.classList.contains("hidden")));
     checkbox.addEventListener("change", update);
     update();
   });
@@ -1975,6 +1967,7 @@ function professionalEliminacionSummary() {
 }
 
 function professionalCycleSummary() {
+  if (!$("chkProCiclos")?.checked) return "";
   const pa = pressureValue("proPa");
   const resident = RESIDENTES.find((r) => r.id === Number($("proResidente")?.value));
   const values = [
@@ -1987,6 +1980,7 @@ function professionalCycleSummary() {
 }
 
 function professionalMedicationSummary() {
+  if (!$("chkProMed")?.checked) return "";
   const med = $("proMed")?.value?.trim();
   const hora = $("proHoraMed")?.value;
   if (!med && !hora) return "";
@@ -1994,25 +1988,26 @@ function professionalMedicationSummary() {
 }
 
 function professionalPositionSummary() {
+  if (!$("chkProPosicion")?.checked) return "";
   const resultado = $("proCambioPosicion")?.value || "Si";
   const posicion = $("proPosicion")?.value;
   const hora = $("proHoraPosicion")?.value;
   const motivo = $("proPosicionMotivo")?.value?.trim();
-  if (!$("chkProPosicion")?.checked && !hora && !motivo) return "";
   return resultado === "No"
     ? ["Cambio: No", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ")
     : [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
 }
 
 function professionalMudaSummary() {
+  if (!$("chkProMudas")?.checked) return "";
   const muda = $("proMuda")?.value;
   const hora = $("proHoraMuda")?.value;
   const motivo = $("proMudaMotivo")?.value?.trim();
-  if (!$("chkProMudas")?.checked && !hora && !motivo) return "";
   return [`Muda: ${muda || "-"}`, hora ? `Hora: ${hora}` : "", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ");
 }
 
 function professionalObservationSummary() {
+  if (!$("chkProObs")?.checked) return "";
   const obs = $("proObs")?.value?.trim();
   if (!obs) return "";
   return obs.length > 120 ? `${obs.slice(0, 117)}...` : obs;
@@ -2038,11 +2033,11 @@ function validateProfessionalDate() {
 }
 
 function professionalCyclesValid(requireHgt = true) {
-  return Boolean($("proTemp").value && $("proSpo2").value && pressureValue("proPa") && (!requireHgt || $("proHgt").value));
+  return professionalCyclesActive();
 }
 
 function professionalCyclesActive() {
-  return Boolean($("chkProCiclos")?.checked);
+  return Boolean($("chkProCiclos")?.checked) && ["proTemp", "proSpo2", "proPaSistolica", "proPaDiastolica", "proHgt"].some((id) => Boolean($(id)?.value));
 }
 
 function professionalMedicationActive() {
@@ -2122,29 +2117,32 @@ function professionalRecordDetail(registro, incluyeCiclos) {
 function validateCycleNumbers({ tempId, spo2Id, pressurePrefix, hgtId, requireHgt = true }) {
   const tempText = $(tempId)?.value;
   const temp = parseDecimalValue(tempText);
-  const spo2 = Number($(spo2Id)?.value);
+  const spo2Text = $(spo2Id)?.value;
+  const spo2 = Number(spo2Text);
+  const sistolicaText = $(`${pressurePrefix}Sistolica`)?.value;
+  const diastolicaText = $(`${pressurePrefix}Diastolica`)?.value;
   const pressure = parsePressure(pressureValue(pressurePrefix));
   const hgt = Number($(hgtId)?.value);
   const hgtText = $(hgtId)?.value;
-  if (!Number.isFinite(temp) || temp < 30 || temp > 45) {
+  if (tempText && (!Number.isFinite(temp) || temp < 30 || temp > 45)) {
     return "La temperatura debe estar entre 30 y 45 C.";
   }
-  if (!Number.isFinite(spo2) || spo2 < 0 || spo2 > 100) {
+  if (spo2Text && (!Number.isFinite(spo2) || spo2 < 0 || spo2 > 100)) {
     return "La saturacion debe ser un numero entre 0 y 100%.";
   }
-  if (!Number.isFinite(pressure.sistolica) || pressure.sistolica < 40 || pressure.sistolica > 260) {
+  if ((sistolicaText && !diastolicaText) || (!sistolicaText && diastolicaText)) {
+    return "Si registra presion arterial debe completar sistolica y diastolica.";
+  }
+  if (sistolicaText && (!Number.isFinite(pressure.sistolica) || pressure.sistolica < 40 || pressure.sistolica > 260)) {
     return "La presion sistolica debe estar entre 40 y 260 mmHg.";
   }
-  if (!Number.isFinite(pressure.diastolica) || pressure.diastolica < 20 || pressure.diastolica > 180) {
+  if (diastolicaText && (!Number.isFinite(pressure.diastolica) || pressure.diastolica < 20 || pressure.diastolica > 180)) {
     return "La presion diastolica debe estar entre 20 y 180 mmHg.";
   }
-  if (pressure.diastolica >= pressure.sistolica) {
+  if (sistolicaText && diastolicaText && pressure.diastolica >= pressure.sistolica) {
     return "La presion diastolica debe ser menor que la sistolica.";
   }
-  if (requireHgt && (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000)) {
-    return "El HGT / glucosa debe estar entre 20 y 1000 mg/dL.";
-  }
-  if (!requireHgt && hgtText && (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000)) {
+  if (hgtText && (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000)) {
     return "El HGT / glucosa debe estar entre 20 y 1000 mg/dL.";
   }
   return "";
