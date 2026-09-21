@@ -464,6 +464,13 @@ button.btn {
   margin: 8px 0 5px;
 }
 
+.section-subtitle {
+  margin: -4px 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 800;
+}
+
 .toggle-card {
   display: flex;
   align-items: center;

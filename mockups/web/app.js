@@ -510,10 +510,10 @@ function residentRequiresHgt(resident) {
 }
 
 function cycleHgtField(id, resident) {
-  const hidden = residentRequiresHgt(resident) ? "" : " hidden";
-  return `<div id="${id}Wrap" class="hgt-field${hidden}">
-    <label>HGT / Glucosa mg/dL</label>
+  return `<div id="${id}Wrap" class="hgt-field">
+    <label>HGT / HCT / Glucosa mg/dL</label>
     <input id="${id}" type="number" min="20" max="1000" step="1" placeholder="110">
+    <small class="field-help" id="${id}Help"></small>
   </div>`;
 }
 
@@ -521,12 +521,15 @@ function updateHgtRequirement(selectId, hgtId) {
   const select = $(selectId);
   const hgt = $(hgtId);
   const wrap = $(`${hgtId}Wrap`);
+  const help = $(`${hgtId}Help`);
   if (!select || !hgt || !wrap) return;
   const resident = RESIDENTES.find((r) => r.id === Number(select.value));
   const requiresHgt = residentRequiresHgt(resident);
-  wrap.classList.toggle("hidden", !requiresHgt);
+  wrap.classList.remove("hidden");
   hgt.required = requiresHgt;
-  if (!requiresHgt) hgt.value = "";
+  if (help) help.textContent = requiresHgt
+    ? "Obligatorio por patologia de ingreso compatible con diabetes o hiperglicemia."
+    : "Opcional si el residente no registra patologia diabetica.";
 }
 
 function cycleDetailText({ temp, spo2, pa, hgt, includeHgt }) {
@@ -761,8 +764,10 @@ function renderFormularioCam(view, editContext = null) {
         <div><label>Residente *</label>${residentSelect("camResidente")}</div>
       </div>
     </div>
-    <div class="form-section">
-      <h2>Diuresis / Deposición</h2>
+    ${toggle("chkEliminacion", "Eliminación Fisiológica")}
+    <div id="secEliminacion" class="form-section hidden">
+      <h2>Eliminación Fisiológica</h2>
+      <p class="section-subtitle">Diuresis / Deposición</p>
       <div class="grid2">
         <div><label>Diuresis (orina)</label><select id="camDiuresisResultado"><option>Si</option><option>No</option></select></div>
         <div><label>Deposición (heces fecales)</label><select id="camDeposicionResultado"><option>Si</option><option>No</option></select></div>
@@ -792,8 +797,11 @@ function renderFormularioCam(view, editContext = null) {
     ${toggle("chkPosicion", "Cambio de Posición")}
     <div id="secPosicion" class="form-section hidden">
       <h2>Cambio de Posición</h2>
+      <div class="grid2">
+        <div><label>¿Se realizó cambio de posición?</label><select id="camCambioPosicion"><option>Si</option><option>No</option></select></div>
+      </div>
       <div class="grid2 position-layout">
-        <div>
+        <div id="camPosicionDatos">
           <label>Posición registrada</label>
           <select id="camPosicion">
             <option>Decúbito supino (boca arriba)</option>
@@ -806,6 +814,10 @@ function renderFormularioCam(view, editContext = null) {
         <div class="position-reference">
           <img src="./assets/cambios-posicion.png" alt="Referencia de cambios de posición">
         </div>
+      </div>
+      <div id="camPosicionMotivoWrap" class="hidden">
+        <label>Motivo por el cual no se realizó cambio de posición</label>
+        <textarea id="camPosicionMotivo" placeholder="Ej: residente se niega, indicación profesional, procedimiento no corresponde"></textarea>
       </div>
     </div>
     ${toggle("chkMudas", "Mudas")}
@@ -838,6 +850,7 @@ function renderFormularioCam(view, editContext = null) {
   bindCamDateRules();
   bindCamResidentRules();
   bindMudaReason();
+  bindPositionReason("cam");
   bindDecimalCommaValidation(["camTemp"]);
   if (editContext) hydrateCamForm(editContext.row);
   updateHgtRequirement("camResidente", "camHgt");
@@ -846,11 +859,13 @@ function renderFormularioCam(view, editContext = null) {
 
 function toggle(id, label) {
   const details = {
+    chkEliminacion: "Diuresis / Deposición.",
     chkCiclos: "Temperatura, saturación, presión y HGT.",
     chkMed: "Hora de administración y remedio suministrado.",
     chkPosicion: "Decúbito supino o laterales con horario.",
     chkMudas: "Registro Si/No y horario de muda.",
     chkObs: "Comentarios adicionales del cuidado.",
+    chkProEliminacion: "Diuresis / Deposición.",
     chkProCiclos: "Temperatura, saturación, presión y HGT.",
     chkProMed: "Hora de administración y remedio suministrado.",
     chkProPosicion: "Decúbito supino o laterales con horario.",
@@ -869,7 +884,7 @@ function toggle(id, label) {
 }
 
 function bindToggles() {
-  [["chkCiclos", "secCiclos"], ["chkMed", "secMed"], ["chkPosicion", "secPosicion"], ["chkMudas", "secMudas"], ["chkObs", "secObs"]].forEach(([chk, sec]) => {
+  [["chkEliminacion", "secEliminacion"], ["chkCiclos", "secCiclos"], ["chkMed", "secMed"], ["chkPosicion", "secPosicion"], ["chkMudas", "secMudas"], ["chkObs", "secObs"]].forEach(([chk, sec]) => {
     const checkbox = $(chk);
     const section = $(sec);
     if (checkbox && section) {
@@ -898,10 +913,41 @@ function bindToggles() {
 function bindMudaReason() {
   const select = $("camMuda");
   const wrap = $("camMudaMotivoWrap");
+  const hora = $("camHoraMuda");
   if (!select || !wrap) return;
   const update = () => {
-    wrap.classList.toggle("hidden", select.value !== "No");
+    const noRealizada = select.value === "No";
+    wrap.classList.toggle("hidden", !noRealizada);
+    if (hora) {
+      hora.disabled = noRealizada;
+      if (noRealizada) hora.value = "";
+    }
     updateCamToggleSummaries();
+  };
+  select.addEventListener("change", update);
+  update();
+}
+
+function bindPositionReason(prefix) {
+  const select = $(`${prefix}CambioPosicion`);
+  const dataWrap = $(`${prefix}PosicionDatos`);
+  const reasonWrap = $(`${prefix}PosicionMotivoWrap`);
+  const posicion = $(`${prefix}Posicion`);
+  const hora = $(`${prefix}HoraPosicion`);
+  const motivo = $(`${prefix}PosicionMotivo`);
+  if (!select || !dataWrap || !reasonWrap) return;
+  const update = () => {
+    const noRealizado = select.value === "No";
+    dataWrap.classList.toggle("hidden", noRealizado);
+    reasonWrap.classList.toggle("hidden", !noRealizado);
+    [posicion, hora].forEach((field) => {
+      if (!field) return;
+      field.disabled = noRealizado;
+      if (noRealizado) field.value = "";
+    });
+    if (!noRealizado && motivo) motivo.value = "";
+    if (prefix === "cam") updateCamToggleSummaries();
+    if (prefix === "pro") updateProfessionalToggleSummaries();
   };
   select.addEventListener("change", update);
   update();
@@ -931,8 +977,11 @@ function hydrateCamForm(row) {
   setValue("camFecha", fecha);
   setValue("camHora", hora || "");
   setValue("camResidente", resident.id);
-  setValue("camDiuresisResultado", row.diuresisResultado || inferDespicheResultado(row.detalle, "Diuresis", row));
-  setValue("camDeposicionResultado", row.deposicionResultado || inferDespicheResultado(row.detalle, "Deposición", row));
+  if (row.diuresisResultado || row.deposicionResultado || /Diuresis|Deposici[oó]n/i.test(String(row.detalle || ""))) {
+    setToggleChecked("chkEliminacion", true);
+    setValue("camDiuresisResultado", row.diuresisResultado || inferDespicheResultado(row.detalle, "Diuresis", row));
+    setValue("camDeposicionResultado", row.deposicionResultado || inferDespicheResultado(row.detalle, "Deposición", row));
+  }
 
   if (cycles.hasData) {
     setToggleChecked("chkCiclos", true);
@@ -949,8 +998,11 @@ function hydrateCamForm(row) {
   }
   if (posicion.hasData) {
     setToggleChecked("chkPosicion", true);
+    setValue("camCambioPosicion", posicion.resultado);
     setValue("camPosicion", posicion.nombre);
     setValue("camHoraPosicion", posicion.hora);
+    setValue("camPosicionMotivo", posicion.motivo);
+    bindPositionReason("cam");
   }
   if (muda.hasData) {
     setToggleChecked("chkMudas", true);
@@ -1022,9 +1074,11 @@ function extractMedicationFormValues(row) {
 
 function extractPositionFormValues(row) {
   const text = String(row.detalle || "");
+  const motivo = row.posicionMotivo || regexValue(text, /Cambio de posici[oó]n:\s*No realizado\.\s*Motivo:\s*(.+?)(?:\.|$)/i);
+  const resultado = motivo || /Cambio de posici[oó]n:\s*No realizado/i.test(text) ? "No" : "Si";
   const nombre = row.posicion || regexValue(text, /Cambio de posici[oó]n:\s*(.+?)\s+a las\s+\d{2}:\d{2}/i);
   const hora = row.horaPosicion || regexValue(text, /Cambio de posici[oó]n:\s*.+?\s+a las\s+(\d{2}:\d{2})/i);
-  return { nombre, hora, hasData: Boolean(nombre || hora) };
+  return { resultado, nombre, hora, motivo, hasData: Boolean(nombre || hora || motivo || /Cambio de posici[oó]n/i.test(text)) };
 }
 
 function extractMudaFormValues(row) {
@@ -1069,8 +1123,9 @@ function clearCamCycles() {
 function bindCamSummaryInputs() {
   [
     "camTemp", "camSpo2", "camPaSistolica", "camPaDiastolica", "camHgt",
+    "camDiuresisResultado", "camDeposicionResultado",
     "camHoraMed", "camMed",
-    "camPosicion", "camHoraPosicion",
+    "camCambioPosicion", "camPosicion", "camHoraPosicion", "camPosicionMotivo",
     "camMuda", "camHoraMuda", "camMudaMotivo",
     "camObs"
   ].forEach((id) => {
@@ -1084,6 +1139,7 @@ function bindCamSummaryInputs() {
 
 function updateCamToggleSummaries() {
   const summaries = {
+    chkEliminacion: camEliminacionSummary(),
     chkCiclos: camCycleSummary(),
     chkMed: camMedicationSummary(),
     chkPosicion: camPositionSummary(),
@@ -1098,6 +1154,11 @@ function updateCamToggleSummaries() {
   });
 }
 
+function camEliminacionSummary() {
+  if (!$("chkEliminacion")?.checked) return "";
+  return `Diuresis: ${$("camDiuresisResultado")?.value || "-"} · Deposición: ${$("camDeposicionResultado")?.value || "-"}`;
+}
+
 function camCycleSummary() {
   const pa = pressureValue("camPa");
   const resident = RESIDENTES.find((r) => r.id === Number($("camResidente")?.value));
@@ -1105,7 +1166,7 @@ function camCycleSummary() {
     $("camTemp")?.value ? `Temp ${$("camTemp").value} C` : "",
     $("camSpo2")?.value ? `Sat ${$("camSpo2").value}%` : "",
     pa ? `PA ${pa}` : "",
-    residentRequiresHgt(resident) && $("camHgt")?.value ? `HGT ${$("camHgt").value}` : ""
+    $("camHgt")?.value ? `HGT ${$("camHgt").value}` : ""
   ].filter(Boolean);
   return values.join(" · ");
 }
@@ -1118,10 +1179,14 @@ function camMedicationSummary() {
 }
 
 function camPositionSummary() {
+  const resultado = $("camCambioPosicion")?.value || "Si";
   const posicion = $("camPosicion")?.value;
   const hora = $("camHoraPosicion")?.value;
-  if (!$("chkPosicion")?.checked && !hora) return "";
-  return [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
+  const motivo = $("camPosicionMotivo")?.value?.trim();
+  if (!$("chkPosicion")?.checked && !hora && !motivo) return "";
+  return resultado === "No"
+    ? ["Cambio: No", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ")
+    : [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
 }
 
 function camMudaSummary() {
@@ -1206,11 +1271,15 @@ function confirmCam(editIndex = null) {
   const hasPositionData = camPositionActive();
   const hasMudaData = camMudaActive();
   const hasObservationData = camObservationActive();
+  const hasEliminacionData = camEliminacionActive();
   if (!$("camCuidadora").value.trim()) faltantes.push("nombre de la cuidadora");
   if (!$("camFecha").value) faltantes.push("fecha");
   if (!$("camHora").value) faltantes.push("hora");
   if (!$("camResidente").value) faltantes.push("residente");
-  if ($("chkCiclos").checked || hasCycleData) {
+  if (!hasEliminacionData && !hasCycleData && !hasMedicationData && !hasPositionData && !hasMudaData && !hasObservationData) {
+    faltantes.push("al menos una categoria habilitada con datos");
+  }
+  if (hasCycleData) {
     if (!$("camTemp").value) faltantes.push("temperatura");
     if (!$("camSpo2").value) faltantes.push("saturacion");
     if (!pressureValue("camPa")) faltantes.push("presion arterial sistolica y diastolica");
@@ -1218,10 +1287,12 @@ function confirmCam(editIndex = null) {
     if (residentRequiresHgt(resident) && !$("camHgt").value) faltantes.push("HGT / glucosa");
   }
   if (hasMedicationData && !$("camMed").value.trim()) faltantes.push("nombre medicamento");
-  if (hasPositionData && !$("camPosicion").value) faltantes.push("cambio de posicion");
-  if (hasPositionData && !$("camHoraPosicion").value) faltantes.push("hora del cambio de posicion");
+  if (hasMedicationData && !$("camHoraMed").value) faltantes.push("hora de administracion de medicamento");
+  if (hasPositionData && $("camCambioPosicion").value === "Si" && !$("camPosicion").value) faltantes.push("cambio de posicion");
+  if (hasPositionData && $("camCambioPosicion").value === "Si" && !$("camHoraPosicion").value) faltantes.push("hora del cambio de posicion");
+  if (hasPositionData && $("camCambioPosicion").value === "No" && !$("camPosicionMotivo").value.trim()) faltantes.push("motivo por el cual no se realizo cambio de posicion");
   if (hasMudaData && !$("camMuda").value) faltantes.push("mudas");
-  if (hasMudaData && !$("camHoraMuda").value) faltantes.push("hora de muda");
+  if (hasMudaData && $("camMuda").value === "Si" && !$("camHoraMuda").value) faltantes.push("hora de muda");
   if (hasMudaData && $("camMuda").value === "No" && !$("camMudaMotivo").value.trim()) faltantes.push("motivo por el cual no se realizo muda");
   if (hasObservationData && !$("camObs").value.trim()) faltantes.push("detalle de observacion");
   if (faltantes.length) {
@@ -1259,23 +1330,25 @@ function confirmCam(editIndex = null) {
       turno: $("camTurno").value,
       cuidadora: $("camCuidadora").value.trim(),
       tipo: camTipo(),
-      despicheTipo: "Diuresis / Deposición",
-      despicheResultado: despicheHasNo({
+      despicheTipo: hasEliminacionData ? "Eliminación Fisiológica - Diuresis / Deposición" : "",
+      despicheResultado: hasEliminacionData && despicheHasNo({
         diuresisResultado: $("camDiuresisResultado").value,
         deposicionResultado: $("camDeposicionResultado").value
-      }) ? "No" : "Si",
-      diuresisResultado: $("camDiuresisResultado").value,
-      deposicionResultado: $("camDeposicionResultado").value,
+      }) ? "No" : hasEliminacionData ? "Si" : "",
+      diuresisResultado: hasEliminacionData ? $("camDiuresisResultado").value : "",
+      deposicionResultado: hasEliminacionData ? $("camDeposicionResultado").value : "",
       cicloTemp: hasCycleData ? $("camTemp").value : "",
       cicloSpo2: hasCycleData ? $("camSpo2").value : "",
       cicloPa: hasCycleData ? pressureValue("camPa") : "",
-      cicloHgt: hasCycleData && requiresHgt ? $("camHgt").value : "",
+      cicloHgt: hasCycleData ? $("camHgt").value : "",
       medicamento: hasMedicationData ? ($("camMed").value || "Medicamento sin nombre") : "",
       horaMedicamento: hasMedicationData ? ($("camHoraMed").value || "") : "",
-      posicion: hasPositionData ? $("camPosicion").value : "",
-      horaPosicion: hasPositionData ? $("camHoraPosicion").value : "",
+      posicion: hasPositionData && $("camCambioPosicion").value === "Si" ? $("camPosicion").value : "",
+      horaPosicion: hasPositionData && $("camCambioPosicion").value === "Si" ? $("camHoraPosicion").value : "",
+      posicionResultado: hasPositionData ? $("camCambioPosicion").value : "",
+      posicionMotivo: hasPositionData && $("camCambioPosicion").value === "No" ? $("camPosicionMotivo").value.trim() : "",
       mudaResultado: hasMudaData ? $("camMuda").value : "",
-      horaMuda: hasMudaData ? $("camHoraMuda").value : "",
+      horaMuda: hasMudaData && $("camMuda").value === "Si" ? $("camHoraMuda").value : "",
       mudaMotivo: hasMudaData && $("camMuda").value === "No" ? $("camMudaMotivo").value.trim() : "",
       observacionCam: hasObservationData ? $("camObs").value.trim() : "",
       detalle: camDetalle(),
@@ -1296,29 +1369,33 @@ function confirmCam(editIndex = null) {
 }
 
 function camCyclesActive() {
-  return ["camTemp", "camSpo2", "camPaSistolica", "camPaDiastolica", "camHgt"].some((id) => Boolean($(id)?.value));
+  return Boolean($("chkCiclos")?.checked);
 }
 
 function camMedicationActive() {
-  return Boolean($("chkMed")?.checked || $("camMed")?.value?.trim() || $("camHoraMed")?.value);
+  return Boolean($("chkMed")?.checked);
 }
 
 function camPositionActive() {
-  return Boolean($("chkPosicion")?.checked || $("camHoraPosicion")?.value);
+  return Boolean($("chkPosicion")?.checked);
 }
 
 function camMudaActive() {
-  return Boolean($("chkMudas")?.checked || $("camHoraMuda")?.value || $("camMudaMotivo")?.value?.trim());
+  return Boolean($("chkMudas")?.checked);
 }
 
 function camObservationActive() {
-  return Boolean($("chkObs")?.checked || $("camObs")?.value?.trim());
+  return Boolean($("chkObs")?.checked);
+}
+
+function camEliminacionActive() {
+  return Boolean($("chkEliminacion")?.checked);
 }
 
 function camTipo() {
   const parts = [];
-  if ($("chkCiclos").checked || camCyclesActive()) parts.push("Control de ciclos");
-  parts.push("Diuresis/Deposición");
+  if (camEliminacionActive()) parts.push("Eliminación Fisiológica");
+  if (camCyclesActive()) parts.push("Control de ciclos");
   if (camMedicationActive()) parts.push("Medicamento");
   if (camPositionActive()) parts.push("Cambio de posición");
   if (camMudaActive()) parts.push("Mudas");
@@ -1328,22 +1405,29 @@ function camTipo() {
 
 function camDetalle() {
   const parts = [];
-  if ($("chkCiclos").checked || camCyclesActive()) {
+  if (camCyclesActive()) {
     const resident = RESIDENTES.find((r) => r.id === Number($("camResidente").value));
     parts.push(`Control registrado. ${cycleDetailText({
       temp: $("camTemp").value,
       spo2: $("camSpo2").value,
       pa: pressureValue("camPa"),
       hgt: $("camHgt").value,
-      includeHgt: residentRequiresHgt(resident)
+      includeHgt: Boolean($("camHgt").value)
     })}.`);
   }
-  parts.push(`Diuresis: ${$("camDiuresisResultado").value}. Deposición: ${$("camDeposicionResultado").value}.`);
+  if (camEliminacionActive()) parts.push(`Eliminación Fisiológica. Diuresis: ${$("camDiuresisResultado").value}. Deposición: ${$("camDeposicionResultado").value}.`);
   if (camMedicationActive()) parts.push(`Medicamento ${$("camMed").value || "sin nombre"} a las ${$("camHoraMed").value || "--:--"}.`);
-  if (camPositionActive()) parts.push(`Cambio de posición: ${$("camPosicion").value} a las ${$("camHoraPosicion").value || "--:--"}.`);
+  if (camPositionActive()) {
+    if ($("camCambioPosicion").value === "No") {
+      parts.push(`Cambio de posición: No realizado. Motivo: ${$("camPosicionMotivo").value.trim()}.`);
+    } else {
+      parts.push(`Cambio de posición: ${$("camPosicion").value} a las ${$("camHoraPosicion").value || "--:--"}.`);
+    }
+  }
   if (camMudaActive()) {
     const motivo = $("camMuda").value === "No" ? ` Motivo: ${$("camMudaMotivo").value.trim()}.` : "";
-    parts.push(`Mudas: ${$("camMuda").value} a las ${$("camHoraMuda").value || "--:--"}.${motivo}`);
+    const hora = $("camMuda").value === "Si" ? ` a las ${$("camHoraMuda").value || "--:--"}` : "";
+    parts.push(`Mudas: ${$("camMuda").value}${hora}.${motivo}`);
   }
   if (camObservationActive()) parts.push($("camObs").value || "Sin detalle de observacion.");
   return parts.join(" ");
@@ -1529,8 +1613,10 @@ function renderFormularioProfesional(rol, editContext = null) {
       <label>Evolucion / registro ${rol}</label>
       <textarea id="proTexto"></textarea>
     </div>
-    <div class="form-section">
-      <h2>Diuresis / Deposición</h2>
+    ${toggle("chkProEliminacion", "Eliminación Fisiológica")}
+    <div id="secProEliminacion" class="form-section hidden">
+      <h2>Eliminación Fisiológica</h2>
+      <p class="section-subtitle">Diuresis / Deposición</p>
       <div class="grid2">
         <div><label>Diuresis (orina)</label><select id="proDiuresisResultado"><option>Si</option><option>No</option></select></div>
         <div><label>Deposición (heces fecales)</label><select id="proDeposicionResultado"><option>Si</option><option>No</option></select></div>
@@ -1559,8 +1645,11 @@ function renderFormularioProfesional(rol, editContext = null) {
     ${toggle("chkProPosicion", "Cambio de Posición")}
     <div id="secProPosicion" class="form-section hidden">
       <h2>Cambio de Posición</h2>
+      <div class="grid2">
+        <div><label>¿Se realizó cambio de posición?</label><select id="proCambioPosicion"><option>Si</option><option>No</option></select></div>
+      </div>
       <div class="grid2 position-layout">
-        <div>
+        <div id="proPosicionDatos">
           <label>Posición registrada</label>
           <select id="proPosicion">
             <option>Decúbito supino (boca arriba)</option>
@@ -1573,6 +1662,10 @@ function renderFormularioProfesional(rol, editContext = null) {
         <div class="position-reference">
           <img src="./assets/cambios-posicion.png" alt="Referencia de cambios de posición">
         </div>
+      </div>
+      <div id="proPosicionMotivoWrap" class="hidden">
+        <label>Motivo por el cual no se realizó cambio de posición</label>
+        <textarea id="proPosicionMotivo" placeholder="Ej: residente se niega, indicación profesional, procedimiento no corresponde"></textarea>
       </div>
     </div>
     ${toggle("chkProMudas", "Mudas")}
@@ -1613,6 +1706,7 @@ function renderFormularioProfesional(rol, editContext = null) {
   bindProfessionalDateRules();
   bindProfessionalToggles();
   bindProfessionalMudaReason();
+  bindPositionReason("pro");
   bindDecimalCommaValidation(["proTemp"]);
   if (editContext) hydrateProfessionalForm(editContext.row);
   if (isReadOnly) lockForm($("view"));
@@ -1626,10 +1720,16 @@ function confirmProfesional(rol, editIndex = null) {
   const hasPositionData = professionalPositionActive();
   const hasMudaData = professionalMudaActive();
   const hasObservationData = professionalObservationActive();
+  const hasEliminacionData = professionalEliminacionActive();
+  const hasMainText = Boolean($("proTexto").value.trim());
   const dateError = validateProfessionalDate();
   const requiresHgt = residentRequiresHgt(resident);
   if (dateError) {
     openModal("Fecha no permitida", dateError);
+    return;
+  }
+  if (!hasMainText && !hasEliminacionData && !incluyeCiclos && !hasMedicationData && !hasPositionData && !hasMudaData && !hasObservationData) {
+    openModal("Registro vacio", "Debe habilitar y completar al menos una categoria, o escribir una evolucion / registro antes de guardar.");
     return;
   }
   if (incluyeCiclos && !professionalCyclesValid(requiresHgt)) {
@@ -1641,10 +1741,12 @@ function confirmProfesional(rol, editIndex = null) {
   }
   const faltantes = [];
   if (hasMedicationData && !$("proMed").value.trim()) faltantes.push("nombre medicamento");
-  if (hasPositionData && !$("proPosicion").value) faltantes.push("cambio de posicion");
-  if (hasPositionData && !$("proHoraPosicion").value) faltantes.push("hora del cambio de posicion");
+  if (hasMedicationData && !$("proHoraMed").value) faltantes.push("hora de administracion de medicamento");
+  if (hasPositionData && $("proCambioPosicion").value === "Si" && !$("proPosicion").value) faltantes.push("cambio de posicion");
+  if (hasPositionData && $("proCambioPosicion").value === "Si" && !$("proHoraPosicion").value) faltantes.push("hora del cambio de posicion");
+  if (hasPositionData && $("proCambioPosicion").value === "No" && !$("proPosicionMotivo").value.trim()) faltantes.push("motivo por el cual no se realizo cambio de posicion");
   if (hasMudaData && !$("proMuda").value) faltantes.push("mudas");
-  if (hasMudaData && !$("proHoraMuda").value) faltantes.push("hora de muda");
+  if (hasMudaData && $("proMuda").value === "Si" && !$("proHoraMuda").value) faltantes.push("hora de muda");
   if (hasMudaData && $("proMuda").value === "No" && !$("proMudaMotivo").value.trim()) faltantes.push("motivo por el cual no se realizo muda");
   if (hasObservationData && !$("proObs").value.trim()) faltantes.push("detalle de observacion");
   if (faltantes.length) {
@@ -1668,30 +1770,32 @@ function confirmProfesional(rol, editIndex = null) {
     return;
   }
   openModal(`Confirmar registro ${rol}`, `Esta seguro que desea ${editIndex === null ? "agregar" : "actualizar"} este registro al residente ${resident.nombre}?`, async () => {
-    const registro = $("proTexto").value || "Registro sin detalle.";
+    const registro = $("proTexto").value.trim();
     const payload = {
       fecha: fechaHora,
       residente: resident.nombre,
       rol,
       usuario: rol === "Enfermero" ? "enfermero@hogarantu.cl" : "dt@hogarantu.cl",
       registro: professionalRecordDetail(registro, incluyeCiclos),
-      despicheTipo: "Diuresis / Deposición",
-      despicheResultado: despicheHasNo({
+      despicheTipo: hasEliminacionData ? "Eliminación Fisiológica - Diuresis / Deposición" : "",
+      despicheResultado: hasEliminacionData && despicheHasNo({
         diuresisResultado: $("proDiuresisResultado").value,
         deposicionResultado: $("proDeposicionResultado").value
-      }) ? "No" : "Si",
-      diuresisResultado: $("proDiuresisResultado").value,
-      deposicionResultado: $("proDeposicionResultado").value,
+      }) ? "No" : hasEliminacionData ? "Si" : "",
+      diuresisResultado: hasEliminacionData ? $("proDiuresisResultado").value : "",
+      deposicionResultado: hasEliminacionData ? $("proDeposicionResultado").value : "",
       cicloTemp: incluyeCiclos ? $("proTemp").value : "",
       cicloSpo2: incluyeCiclos ? $("proSpo2").value : "",
       cicloPa: incluyeCiclos ? pressureValue("proPa") : "",
-      cicloHgt: incluyeCiclos && requiresHgt ? $("proHgt").value : "",
+      cicloHgt: incluyeCiclos ? $("proHgt").value : "",
       medicamento: hasMedicationData ? ($("proMed").value || "Medicamento sin nombre") : "",
       horaMedicamento: hasMedicationData ? ($("proHoraMed").value || "") : "",
-      posicion: hasPositionData ? $("proPosicion").value : "",
-      horaPosicion: hasPositionData ? $("proHoraPosicion").value : "",
+      posicion: hasPositionData && $("proCambioPosicion").value === "Si" ? $("proPosicion").value : "",
+      horaPosicion: hasPositionData && $("proCambioPosicion").value === "Si" ? $("proHoraPosicion").value : "",
+      posicionResultado: hasPositionData ? $("proCambioPosicion").value : "",
+      posicionMotivo: hasPositionData && $("proCambioPosicion").value === "No" ? $("proPosicionMotivo").value.trim() : "",
       mudaResultado: hasMudaData ? $("proMuda").value : "",
-      horaMuda: hasMudaData ? $("proHoraMuda").value : "",
+      horaMuda: hasMudaData && $("proMuda").value === "Si" ? $("proHoraMuda").value : "",
       mudaMotivo: hasMudaData && $("proMuda").value === "No" ? $("proMudaMotivo").value.trim() : "",
       observacionCam: hasObservationData ? $("proObs").value.trim() : "",
       editable: true
@@ -1715,6 +1819,7 @@ function confirmProfesional(rol, editIndex = null) {
 
 function bindProfessionalToggles() {
   [
+    ["chkProEliminacion", "secProEliminacion"],
     ["chkProCiclos", "secProCiclos"],
     ["chkProMed", "secProMed"],
     ["chkProPosicion", "secProPosicion"],
@@ -1748,9 +1853,15 @@ function bindProfessionalToggles() {
 function bindProfessionalMudaReason() {
   const select = $("proMuda");
   const wrap = $("proMudaMotivoWrap");
+  const hora = $("proHoraMuda");
   if (!select || !wrap) return;
   const update = () => {
-    wrap.classList.toggle("hidden", select.value !== "No");
+    const noRealizada = select.value === "No";
+    wrap.classList.toggle("hidden", !noRealizada);
+    if (hora) {
+      hora.disabled = noRealizada;
+      if (noRealizada) hora.value = "";
+    }
     updateProfessionalToggleSummaries();
   };
   select.addEventListener("change", update);
@@ -1771,8 +1882,11 @@ function hydrateProfessionalForm(row) {
   setValue("proFecha", fecha);
   setValue("proHora", hora || "");
   setValue("proTexto", extractProfessionalMainText(row));
-  setValue("proDiuresisResultado", row.diuresisResultado || inferDespicheResultado(row.registro, "Diuresis", row));
-  setValue("proDeposicionResultado", row.deposicionResultado || inferDespicheResultado(row.registro, "Deposición", row));
+  if (row.diuresisResultado || row.deposicionResultado || /Diuresis|Deposici[oó]n/i.test(String(row.registro || ""))) {
+    setToggleChecked("chkProEliminacion", true);
+    setValue("proDiuresisResultado", row.diuresisResultado || inferDespicheResultado(row.registro, "Diuresis", row));
+    setValue("proDeposicionResultado", row.deposicionResultado || inferDespicheResultado(row.registro, "Deposición", row));
+  }
   $("proFicha").innerHTML = residentProfile(resident);
 
   if (cycles.hasData) {
@@ -1790,8 +1904,11 @@ function hydrateProfessionalForm(row) {
   }
   if (posicion.hasData) {
     setToggleChecked("chkProPosicion", true);
+    setValue("proCambioPosicion", posicion.resultado);
     setValue("proPosicion", posicion.nombre);
     setValue("proHoraPosicion", posicion.hora);
+    setValue("proPosicionMotivo", posicion.motivo);
+    bindPositionReason("pro");
   }
   if (muda.hasData) {
     setToggleChecked("chkProMudas", true);
@@ -1821,8 +1938,9 @@ function extractProfessionalMainText(row) {
 function bindProfessionalSummaryInputs() {
   [
     "proTemp", "proSpo2", "proPaSistolica", "proPaDiastolica", "proHgt",
+    "proDiuresisResultado", "proDeposicionResultado",
     "proHoraMed", "proMed",
-    "proPosicion", "proHoraPosicion",
+    "proCambioPosicion", "proPosicion", "proHoraPosicion", "proPosicionMotivo",
     "proMuda", "proHoraMuda", "proMudaMotivo",
     "proObs"
   ].forEach((id) => {
@@ -1836,6 +1954,7 @@ function bindProfessionalSummaryInputs() {
 
 function updateProfessionalToggleSummaries() {
   const summaries = {
+    chkProEliminacion: professionalEliminacionSummary(),
     chkProCiclos: professionalCycleSummary(),
     chkProMed: professionalMedicationSummary(),
     chkProPosicion: professionalPositionSummary(),
@@ -1850,6 +1969,11 @@ function updateProfessionalToggleSummaries() {
   });
 }
 
+function professionalEliminacionSummary() {
+  if (!$("chkProEliminacion")?.checked) return "";
+  return `Diuresis: ${$("proDiuresisResultado")?.value || "-"} · Deposición: ${$("proDeposicionResultado")?.value || "-"}`;
+}
+
 function professionalCycleSummary() {
   const pa = pressureValue("proPa");
   const resident = RESIDENTES.find((r) => r.id === Number($("proResidente")?.value));
@@ -1857,7 +1981,7 @@ function professionalCycleSummary() {
     $("proTemp")?.value ? `Temp ${$("proTemp").value} C` : "",
     $("proSpo2")?.value ? `Sat ${$("proSpo2").value}%` : "",
     pa ? `PA ${pa}` : "",
-    residentRequiresHgt(resident) && $("proHgt")?.value ? `HGT ${$("proHgt").value}` : ""
+    $("proHgt")?.value ? `HGT ${$("proHgt").value}` : ""
   ].filter(Boolean);
   return values.join(" · ");
 }
@@ -1870,10 +1994,14 @@ function professionalMedicationSummary() {
 }
 
 function professionalPositionSummary() {
+  const resultado = $("proCambioPosicion")?.value || "Si";
   const posicion = $("proPosicion")?.value;
   const hora = $("proHoraPosicion")?.value;
-  if (!$("chkProPosicion")?.checked && !hora) return "";
-  return [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
+  const motivo = $("proPosicionMotivo")?.value?.trim();
+  if (!$("chkProPosicion")?.checked && !hora && !motivo) return "";
+  return resultado === "No"
+    ? ["Cambio: No", motivo ? `Motivo: ${motivo}` : ""].filter(Boolean).join(" · ")
+    : [posicion || "", hora ? `Hora: ${hora}` : ""].filter(Boolean).join(" · ");
 }
 
 function professionalMudaSummary() {
@@ -1914,23 +2042,27 @@ function professionalCyclesValid(requireHgt = true) {
 }
 
 function professionalCyclesActive() {
-  return ["proTemp", "proSpo2", "proPaSistolica", "proPaDiastolica", "proHgt"].some((id) => Boolean($(id)?.value));
+  return Boolean($("chkProCiclos")?.checked);
 }
 
 function professionalMedicationActive() {
-  return Boolean($("chkProMed")?.checked || $("proMed")?.value?.trim() || $("proHoraMed")?.value);
+  return Boolean($("chkProMed")?.checked);
 }
 
 function professionalPositionActive() {
-  return Boolean($("chkProPosicion")?.checked || $("proHoraPosicion")?.value);
+  return Boolean($("chkProPosicion")?.checked);
 }
 
 function professionalMudaActive() {
-  return Boolean($("chkProMudas")?.checked || $("proHoraMuda")?.value || $("proMudaMotivo")?.value?.trim());
+  return Boolean($("chkProMudas")?.checked);
 }
 
 function professionalObservationActive() {
-  return Boolean($("chkProObs")?.checked || $("proObs")?.value?.trim());
+  return Boolean($("chkProObs")?.checked);
+}
+
+function professionalEliminacionActive() {
+  return Boolean($("chkProEliminacion")?.checked);
 }
 
 function professionalCycleRecord(resident, rol, fechaHora) {
@@ -1942,7 +2074,7 @@ function professionalCycleRecord(resident, rol, fechaHora) {
     temp: Number(parseDecimalValue($("proTemp").value).toFixed(1)),
     spo2: Number($("proSpo2").value),
     pad: pressure.diastolica,
-    hgt: requiresHgt ? Number($("proHgt").value) : null,
+    hgt: $("proHgt").value ? Number($("proHgt").value) : null,
     origen: rol,
     usuario: rol === "Enfermero" ? "enfermero@hogarantu.cl" : "dt@hogarantu.cl",
     observacion: $("proObsCiclos").value || "Toma de ciclos profesional."
@@ -1956,24 +2088,32 @@ function professionalCyclesDetail() {
     spo2: $("proSpo2").value,
     pa: pressureValue("proPa"),
     hgt: $("proHgt").value,
-    includeHgt: residentRequiresHgt(resident)
+    includeHgt: Boolean($("proHgt").value)
   });
   return `${detail}. ${$("proObsCiclos").value || ""}`.trim();
 }
 
 function professionalDespicheDetail() {
-  return `Diuresis: ${$("proDiuresisResultado").value}. Deposición: ${$("proDeposicionResultado").value}.`;
+  return `Eliminación Fisiológica. Diuresis: ${$("proDiuresisResultado").value}. Deposición: ${$("proDeposicionResultado").value}.`;
 }
 
 function professionalRecordDetail(registro, incluyeCiclos) {
-  const parts = [registro];
+  const parts = [];
+  if (registro) parts.push(registro);
   if (incluyeCiclos) parts.push(`Se agrega toma de ciclos profesional: ${professionalCyclesDetail()}`);
-  parts.push(professionalDespicheDetail());
+  if (professionalEliminacionActive()) parts.push(professionalDespicheDetail());
   if (professionalMedicationActive()) parts.push(`Medicamento ${$("proMed").value || "sin nombre"} a las ${$("proHoraMed").value || "--:--"}.`);
-  if (professionalPositionActive()) parts.push(`Cambio de posición: ${$("proPosicion").value} a las ${$("proHoraPosicion").value || "--:--"}.`);
+  if (professionalPositionActive()) {
+    if ($("proCambioPosicion").value === "No") {
+      parts.push(`Cambio de posición: No realizado. Motivo: ${$("proPosicionMotivo").value.trim()}.`);
+    } else {
+      parts.push(`Cambio de posición: ${$("proPosicion").value} a las ${$("proHoraPosicion").value || "--:--"}.`);
+    }
+  }
   if (professionalMudaActive()) {
     const motivo = $("proMuda").value === "No" ? ` Motivo: ${$("proMudaMotivo").value.trim()}.` : "";
-    parts.push(`Mudas: ${$("proMuda").value} a las ${$("proHoraMuda").value || "--:--"}.${motivo}`);
+    const hora = $("proMuda").value === "Si" ? ` a las ${$("proHoraMuda").value || "--:--"}` : "";
+    parts.push(`Mudas: ${$("proMuda").value}${hora}.${motivo}`);
   }
   if (professionalObservationActive()) parts.push($("proObs").value || "Sin detalle de observacion.");
   return parts.join(" ");
@@ -1985,6 +2125,7 @@ function validateCycleNumbers({ tempId, spo2Id, pressurePrefix, hgtId, requireHg
   const spo2 = Number($(spo2Id)?.value);
   const pressure = parsePressure(pressureValue(pressurePrefix));
   const hgt = Number($(hgtId)?.value);
+  const hgtText = $(hgtId)?.value;
   if (!Number.isFinite(temp) || temp < 30 || temp > 45) {
     return "La temperatura debe estar entre 30 y 45 C.";
   }
@@ -2001,6 +2142,9 @@ function validateCycleNumbers({ tempId, spo2Id, pressurePrefix, hgtId, requireHg
     return "La presion diastolica debe ser menor que la sistolica.";
   }
   if (requireHgt && (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000)) {
+    return "El HGT / glucosa debe estar entre 20 y 1000 mg/dL.";
+  }
+  if (!requireHgt && hgtText && (!Number.isFinite(hgt) || hgt < 20 || hgt > 1000)) {
     return "El HGT / glucosa debe estar entre 20 y 1000 mg/dL.";
   }
   return "";
