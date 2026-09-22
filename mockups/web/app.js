@@ -222,6 +222,14 @@ async function persistRegistro(origen, resident, registro) {
   return { ...registro, id: saved.id };
 }
 
+async function refreshRegistrosAfterSave(source, savedRegistro) {
+  await loadRegistrosFromApi();
+  const rows = recordArray(source);
+  if (savedRegistro?.id && !rows.some((row) => String(row.id) === String(savedRegistro.id))) {
+    rows.unshift(savedRegistro);
+  }
+}
+
 function init() {
   renderRoleSelect();
   $("loginForm").addEventListener("submit", handleLogin);
@@ -1392,13 +1400,14 @@ function confirmCam(editIndex = null) {
     };
     try {
       if (editIndex === null) {
-        REGISTROS_CAM.unshift(await persistRegistro("cam", resident, registro));
+        const savedRegistro = await persistRegistro("cam", resident, registro);
+        await refreshRegistrosAfterSave("cam", savedRegistro);
       } else {
         REGISTROS_CAM[editIndex] = { ...REGISTROS_CAM[editIndex], ...registro };
       }
       state.view = editIndex === null ? "misRegistrosCam" : (state.editReturnView || "misRegistrosCam");
       renderShell();
-      openModal("Guardado con éxito", "El registro fue guardado correctamente.");
+      openRegistroGuardadoModal();
     } catch (error) {
       openModal("No se pudo guardar", `El registro CAM no fue guardado en la base de datos. Detalle: ${error.message}`);
     }
@@ -1851,7 +1860,8 @@ function confirmProfesional(rol, editIndex = null) {
     };
     try {
       if (editIndex === null) {
-        REGISTROS_PRO.unshift(await persistRegistro("pro", resident, payload));
+        const savedRegistro = await persistRegistro("pro", resident, payload);
+        await refreshRegistrosAfterSave("pro", savedRegistro);
       } else {
         Object.assign(REGISTROS_PRO[editIndex], payload);
       }
@@ -1860,7 +1870,7 @@ function confirmProfesional(rol, editIndex = null) {
       }
       state.view = editIndex === null ? "misRegistrosProfesional" : state.editReturnView || "misRegistrosProfesional";
       renderShell();
-      openModal("Guardado con éxito", "El registro fue guardado correctamente.");
+      openRegistroGuardadoModal();
     } catch (error) {
       openModal("No se pudo guardar", `El registro profesional no fue guardado en la base de datos. Detalle: ${error.message}`);
     }
@@ -2728,9 +2738,11 @@ function confirmNutri() {
       editable: true
     };
     try {
-      REGISTROS_NUTRI.unshift(await persistRegistro("nutri", resident, registro));
+      const savedRegistro = await persistRegistro("nutri", resident, registro);
+      await refreshRegistrosAfterSave("nutri", savedRegistro);
       state.view = "misRegistrosNutri";
       renderShell();
+      openRegistroGuardadoModal();
     } catch (error) {
       openModal("No se pudo guardar", `El registro nutricional no fue guardado en la base de datos. Detalle: ${error.message}`);
     }
@@ -3018,6 +3030,7 @@ function saveNutriRecordEdit(index) {
     row.editable = true;
     state.view = state.editReturnView || "registros";
     renderShell();
+    openRegistroGuardadoModal();
   });
 }
 
@@ -3107,6 +3120,7 @@ function saveRecordEdit(source, index) {
     row.editable = true;
     state.view = state.editReturnView || "registros";
     renderShell();
+    openRegistroGuardadoModal();
   });
 }
 
@@ -4083,6 +4097,7 @@ function escapeJs(value) {
 }
 
 function openModal(title, text, onConfirm) {
+  setModalButtons("Guardar", true);
   $("modalTitle").textContent = title;
   $("modalText").textContent = text;
   $("modal").classList.add("open");
@@ -4093,7 +4108,17 @@ function openModal(title, text, onConfirm) {
   };
 }
 
+function openRegistroGuardadoModal() {
+  setModalButtons("Aceptar", false);
+  $("modalTitle").textContent = "Registro guardado con éxito";
+  $("modalText").textContent = "";
+  $("modal").classList.add("open");
+  $("modal").setAttribute("aria-hidden", "false");
+  $("modalConfirm").onclick = closeModal;
+}
+
 function openPromptModal(title, text, placeholder, onConfirm) {
+  setModalButtons("Guardar", true);
   $("modalTitle").textContent = title;
   $("modalText").innerHTML = `${escapeHtml(text)}<textarea id="modalPromptInput" class="modal-textarea" placeholder="${escapeHtml(placeholder)}"></textarea>`;
   $("modal").classList.add("open");
@@ -4105,10 +4130,17 @@ function openPromptModal(title, text, placeholder, onConfirm) {
   };
 }
 
+function setModalButtons(confirmLabel, showCancel) {
+  $("modalConfirm").textContent = confirmLabel;
+  $("modalCancel").textContent = "Volver y corregir";
+  $("modalCancel").style.display = showCancel ? "" : "none";
+}
+
 function closeModal() {
   $("modal").classList.remove("open");
   $("modal").setAttribute("aria-hidden", "true");
   $("modalText").textContent = "";
+  setModalButtons("Guardar", true);
 }
 
 init();
