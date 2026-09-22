@@ -379,8 +379,6 @@ function pageNavigationActions() {
     actions.push(`<button class="btn ghost" onclick="go('${state.activeRecordReturnView}')">Volver atrás</button>`);
   } else if (isRecordsView(state.view) && state.registrosPage > 1) {
     actions.push(`<button class="btn ghost" onclick="volverPaginaRegistros()">Volver a página anterior</button>`);
-  } else if (state.previousView && state.previousView !== state.view && !isMainMenuView(state.previousView)) {
-    actions.push(`<button class="btn ghost" onclick="go('${state.previousView}')">Volver atrás</button>`);
   }
   actions.push(`<button class="btn secondary" onclick="goMainMenu()">Volver al Menú Principal</button>`);
   return actions.join("");
