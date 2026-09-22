@@ -1510,13 +1510,14 @@ function recordChecklistDetail(row) {
     .map((label) => ({ label, result: recordDespicheResult(row, label) }))
     .filter((item) => item.result);
   const items = [
-    ...despicheItems.map(({ label, result }) => ({ label, status: result === "No" ? "negative" : "ok" })),
-    { label: "Control Registrado", status: recordHasCycles(row) ? "ok" : "missing" },
-    { label: "Medicamento", status: recordHasMedication(row) ? "ok" : "missing" },
-    { label: "Posición", status: recordHasPosition(row) ? "ok" : "missing" },
-    { label: "Mudas", status: recordHasMudas(row) ? "ok" : "missing" },
-    { label: "Observación", status: recordHasObservation(row) ? "ok" : "missing" }
+    ...despicheItems.map(({ label, result }) => ({ label, status: result === "No" ? "negative" : "ok" }))
   ];
+  if (recordHasCycles(row)) items.push({ label: "Control Registrado", status: "ok" });
+  if (recordHasMedication(row)) items.push({ label: "Medicamento", status: "ok" });
+  if (recordHasPosition(row)) items.push({ label: "Posición", status: recordPositionResult(row) === "No" ? "negative" : "ok" });
+  if (recordHasMudas(row)) items.push({ label: "Mudas", status: recordMudaResult(row) === "No" ? "negative" : "ok" });
+  if (recordHasObservation(row)) items.push({ label: "Observación", status: "ok" });
+  if (!items.length) return `<span class="muted">Sin categorías registradas</span>`;
   return `<div class="record-checklist">${items.map(({ label, status }) => {
     const ok = status === "ok";
     return `<span class="${status}"><b>${ok ? "✓" : "✕"}</b> ${label}</span>`;
@@ -1589,8 +1590,21 @@ function recordHasPosition(row) {
   return Boolean(row.posicion || row.horaPosicion || /Cambio de posici[oó]n/i.test(recordText(row)));
 }
 
+function recordPositionResult(row) {
+  const text = recordText(row);
+  if (row.posicionResultado) return normalizeSiNo(row.posicionResultado);
+  return /Cambio de posici[oó]n:\s*No realizado/i.test(text) ? "No" : "Si";
+}
+
 function recordHasMudas(row) {
   return Boolean(row.mudaResultado || row.horaMuda || row.mudaMotivo || /Mudas/i.test(recordText(row)));
+}
+
+function recordMudaResult(row) {
+  const text = recordText(row);
+  if (row.mudaResultado) return normalizeSiNo(row.mudaResultado);
+  const match = text.match(/Mudas:\s*(Si|No)/i);
+  return match ? normalizeSiNo(match[1]) : "Si";
 }
 
 function recordHasObservation(row) {

@@ -696,7 +696,6 @@ th {
   color: #126a37;
 }
 
-.record-checklist .missing b,
 .record-checklist .negative b {
   background: #ffe1e4;
   color: var(--red);
