@@ -1506,16 +1506,21 @@ function displayRegistroTipo(tipo) {
 }
 
 function recordChecklistDetail(row) {
+  const despicheItems = ["Diuresis", "Deposición"]
+    .map((label) => ({ label, result: recordDespicheResult(row, label) }))
+    .filter((item) => item.result);
   const items = [
-    ["Diuresis", recordHasDiuresis(row)],
-    ["Deposición", recordHasDeposicion(row)],
-    ["Control Registrado", recordHasCycles(row)],
-    ["Medicamento", recordHasMedication(row)],
-    ["Posición", recordHasPosition(row)],
-    ["Mudas", recordHasMudas(row)],
-    ["Observación", recordHasObservation(row)]
+    ...despicheItems.map(({ label, result }) => ({ label, status: result === "No" ? "negative" : "ok" })),
+    { label: "Control Registrado", status: recordHasCycles(row) ? "ok" : "missing" },
+    { label: "Medicamento", status: recordHasMedication(row) ? "ok" : "missing" },
+    { label: "Posición", status: recordHasPosition(row) ? "ok" : "missing" },
+    { label: "Mudas", status: recordHasMudas(row) ? "ok" : "missing" },
+    { label: "Observación", status: recordHasObservation(row) ? "ok" : "missing" }
   ];
-  return `<div class="record-checklist">${items.map(([label, ok]) => `<span class="${ok ? "ok" : "no"}"><b>${ok ? "✓" : "✕"}</b> ${label}</span>`).join("")}</div>`;
+  return `<div class="record-checklist">${items.map(({ label, status }) => {
+    const ok = status === "ok";
+    return `<span class="${status}"><b>${ok ? "✓" : "✕"}</b> ${label}</span>`;
+  }).join("")}</div>`;
 }
 
 function camChecklistDetail(row) {
