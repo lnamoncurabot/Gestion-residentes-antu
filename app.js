@@ -21,6 +21,7 @@
   registrosExportFrom: "2026-06-01",
   registrosExportTo: "2026-06-15",
   editReturnView: "registros",
+  activeRecordReturnView: null,
   previousView: null
 };
 
@@ -374,7 +375,9 @@ function isMainMenuView(view = state.view) {
 function pageNavigationActions() {
   if (!state.isAuthenticated || isMainMenuView()) return "";
   const actions = [];
-  if (isRecordsView(state.view) && state.registrosPage > 1) {
+  if (state.activeRecordReturnView) {
+    actions.push(`<button class="btn ghost" onclick="go('${state.activeRecordReturnView}')">Volver atrás</button>`);
+  } else if (isRecordsView(state.view) && state.registrosPage > 1) {
     actions.push(`<button class="btn ghost" onclick="volverPaginaRegistros()">Volver a página anterior</button>`);
   } else if (state.previousView && state.previousView !== state.view && !isMainMenuView(state.previousView)) {
     actions.push(`<button class="btn ghost" onclick="go('${state.previousView}')">Volver atrás</button>`);
@@ -2923,6 +2926,7 @@ function renderRecordForm(source, index, returnView = "registros", requireEditab
     openModal("Registro bloqueado", "Este registro ya supero el periodo permitido de edicion.");
     return;
   }
+  state.activeRecordReturnView = returnView;
   if (source === "cam") {
     state.editReturnView = returnView;
     renderFormularioCam($("view"), { row, index, returnView, readonly: readOnly });
@@ -4068,6 +4072,7 @@ function go(view) {
   if (view !== state.view) {
     state.previousView = state.view;
   }
+  state.activeRecordReturnView = null;
   if (isRecordsView(view) && !isRecordsView(state.view)) {
     state.registrosPage = 1;
   }
