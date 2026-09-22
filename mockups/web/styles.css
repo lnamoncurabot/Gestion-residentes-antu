@@ -629,6 +629,11 @@ td {
   vertical-align: top;
 }
 
+th:last-child,
+td:last-child {
+  min-width: 190px;
+}
+
 th {
   color: var(--muted);
   font-size: 13px;
@@ -662,15 +667,16 @@ th {
 
 .action-stack {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: flex-start;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
 }
 
 .action-stack .btn {
-  min-width: 64px;
-  padding: 7px 10px;
+  min-width: 56px;
+  padding: 7px 9px;
   text-align: center;
+  white-space: nowrap;
 }
 
 .record-checklist {
