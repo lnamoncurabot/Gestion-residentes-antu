@@ -210,3 +210,26 @@ export async function crearRegistro(payload: RegistroPayload) {
     connection.release();
   }
 }
+
+export async function eliminarRegistro(origen: RegistroPayload["origen"], id: number) {
+  const tableByOrigin = {
+    cam: "registros_cam",
+    pro: "registros_profesionales",
+    nutri: "registros_nutricion"
+  };
+  const table = tableByOrigin[origen];
+  if (!table || !id) {
+    throw new Error("Debe indicar un registro valido para eliminar.");
+  }
+
+  const [result] = await pool.execute<ResultSetHeader>(
+    `DELETE FROM ${table} WHERE id = :id`,
+    { id }
+  );
+
+  if (!result.affectedRows) {
+    throw new Error("No se encontro el registro solicitado.");
+  }
+
+  return { ok: true, origen, id };
+}

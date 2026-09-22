@@ -222,6 +222,11 @@ async function persistRegistro(origen, resident, registro) {
   return { ...registro, id: saved.id };
 }
 
+async function deleteRegistroFromApi(source, row) {
+  if (!row?.id) return { ok: true };
+  return apiRequest(`/registros/${source}/${row.id}`, { method: "DELETE" });
+}
+
 async function refreshRegistrosAfterSave(source, savedRegistro) {
   await loadRegistrosFromApi();
   const rows = recordArray(source);
@@ -1506,6 +1511,7 @@ function recordActionButtons(row, source, returnView) {
   return `<div class="action-stack">
     <button class="btn ghost" onclick="startRecordView('${source}', ${index}, '${returnView}')">Ver</button>
     ${row.editable ? `<button class="btn secondary" onclick="startRecordEdit('${source}', ${index}, '${returnView}', true)">Editar</button>` : `<button class="btn ghost" disabled>No editable</button>`}
+    ${canDeleteRecords() ? `<button class="btn danger" onclick="confirmDeleteRecord('${source}', ${index}, '${returnView}')">Eliminar</button>` : ""}
   </div>`;
 }
 
@@ -2919,7 +2925,30 @@ function adminRecordActionButtons(source, index, row) {
   return `<div class="action-stack">
     <button class="btn ghost" onclick="startRecordView('${source}', ${index})">Ver</button>
     <button class="btn secondary" onclick="startRecordEdit('${source}', ${index})">Editar</button>
+    ${canDeleteRecords() ? `<button class="btn danger" onclick="confirmDeleteRecord('${source}', ${index}, 'registros')">Eliminar</button>` : ""}
   </div>`;
+}
+
+function canDeleteRecords() {
+  return ["administrador", "administrador_respaldo"].includes(state.role)
+    && ["administracion@hogarantu.cl", "administracion_respaldo@hogarantu.cl", "administracion_respaldo@hogaranatu.cl"].includes(state.loggedUser);
+}
+
+function confirmDeleteRecord(source, index, returnView = state.view) {
+  const row = recordArray(source)[index];
+  if (!row) return;
+  openModal("Eliminar registro", `Desea eliminar este registro de ${row.residente || "residente sin nombre"}? Esta accion lo sacara del listado.`, async () => {
+    try {
+      await deleteRegistroFromApi(source, row);
+      recordArray(source).splice(index, 1);
+      await loadRegistrosFromApi();
+      state.view = returnView;
+      renderShell();
+      openModal("Registro eliminado", "El registro fue eliminado del listado.");
+    } catch (error) {
+      openModal("No se pudo eliminar", `El registro no fue eliminado. Detalle: ${error.message}`);
+    }
+  });
 }
 
 function startRecordView(source, index, returnView = "registros") {
