@@ -20,7 +20,8 @@
   registrosExportMode: "all",
   registrosExportFrom: "2026-06-01",
   registrosExportTo: "2026-06-15",
-  editReturnView: "registros"
+  editReturnView: "registros",
+  previousView: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -251,8 +252,7 @@ function renderShell() {
     .join("");
   $("menu").querySelectorAll("button").forEach((button) => {
     button.addEventListener("click", () => {
-      state.view = button.dataset.view;
-      renderShell();
+      go(button.dataset.view);
     });
   });
   renderView();
@@ -350,15 +350,52 @@ function renderView() {
 }
 
 function page(title, text, action = "") {
+  const navigation = pageNavigationActions();
+  const actions = [navigation, action].filter(Boolean).join("");
   return `
     <div class="page-title">
       <div>
         <h1>${title}</h1>
         <p>${text}</p>
       </div>
-      ${action}
+      ${actions ? `<div class="page-actions">${actions}</div>` : ""}
     </div>
   `;
+}
+
+function mainMenuView() {
+  return ROLES[state.role]?.menu?.[0]?.[0] || "inicio";
+}
+
+function isMainMenuView(view = state.view) {
+  return view === mainMenuView();
+}
+
+function pageNavigationActions() {
+  if (!state.isAuthenticated || isMainMenuView()) return "";
+  const actions = [];
+  if (isRecordsView(state.view) && state.registrosPage > 1) {
+    actions.push(`<button class="btn ghost" onclick="volverPaginaRegistros()">Volver a página anterior</button>`);
+  } else if (state.previousView && state.previousView !== state.view && !isMainMenuView(state.previousView)) {
+    actions.push(`<button class="btn ghost" onclick="go('${state.previousView}')">Volver atrás</button>`);
+  }
+  actions.push(`<button class="btn secondary" onclick="goMainMenu()">Volver al Menú Principal</button>`);
+  return actions.join("");
+}
+
+function isRecordsView(view = state.view) {
+  return ["registros", "misRegistrosCam", "misRegistrosProfesional", "misRegistrosNutri"].includes(view);
+}
+
+function goMainMenu() {
+  go(mainMenuView());
+}
+
+function volverPaginaRegistros() {
+  if (state.registrosPage > 1) {
+    state.registrosPage -= 1;
+    renderView();
+  }
 }
 
 function metrics(items) {
@@ -4028,6 +4065,12 @@ function parseAnyDate(value) {
 }
 
 function go(view) {
+  if (view !== state.view) {
+    state.previousView = state.view;
+  }
+  if (isRecordsView(view) && !isRecordsView(state.view)) {
+    state.registrosPage = 1;
+  }
   state.view = view;
   renderShell();
 }

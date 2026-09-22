@@ -258,6 +258,14 @@ textarea {
   max-width: 760px;
 }
 
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(4, minmax(140px, 1fr));
@@ -945,7 +953,12 @@ th {
   }
 
   .page-title {
-    display: block;
+    display: grid;
+    gap: 10px;
+  }
+
+  .page-actions {
+    justify-content: flex-start;
   }
 
   body.admin-left-menu .shell {
