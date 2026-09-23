@@ -27,6 +27,7 @@
 
 const $ = (id) => document.getElementById(id);
 const DEMO_PASSWORD = "antu2026";
+const SESSION_STORAGE_KEY = "antu_session_state_v1";
 const DEMO_USERS = [
   { email: "administracion@hogarantu.cl", role: "administrador" },
   { email: "administracion_respaldo@hogarantu.cl", role: "administrador_respaldo" },
@@ -182,6 +183,7 @@ function normalizeNutriRegistro(row) {
     id: row.id,
     fecha: formatApiDateTime(row.fecha_hora || row.fecha),
     residente: row.residente || datos.residente || "",
+    peso: formatPeso(row.peso_kg ?? row.peso ?? datos.peso),
     imc: row.imc ?? datos.imc ?? "-",
     observacion: row.observaciones || row.observacion || datos.observacion || "Sin observaciones.",
     editable: true
@@ -202,7 +204,7 @@ function registroToApiPayload(origen, resident, registro) {
     registro: registro.registro,
     imc: registro.imc,
     observacion: registro.observacion,
-    peso_kg: parsePesoNumber(resident.peso),
+    peso_kg: parsePesoNumber(registro.peso || resident.peso),
     talla_m: parsePesoNumber(registro.talla),
     cicloTemp: registro.cicloTemp,
     cicloSpo2: registro.cicloSpo2,
@@ -235,7 +237,8 @@ async function refreshRegistrosAfterSave(source, savedRegistro) {
   }
 }
 
-function init() {
+async function init() {
+  const restored = restoreSessionState();
   renderRoleSelect();
   $("loginForm").addEventListener("submit", handleLogin);
   $("roleSelect").addEventListener("change", (event) => {
@@ -245,7 +248,72 @@ function init() {
   });
   $("modalCancel").addEventListener("click", closeModal);
   $("logoutBtn").addEventListener("click", logout);
+  if (restored) {
+    await loadResidentsFromApi();
+    await loadRegistrosFromApi();
+  }
   renderAuthState();
+}
+
+function restoreSessionState() {
+  try {
+    const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    const user = DEMO_USERS.find((item) => item.email === saved.loggedUser);
+    if (!user) {
+      clearSessionState();
+      return false;
+    }
+    state.isAuthenticated = true;
+    state.loggedUser = user.email;
+    state.role = user.role;
+    state.view = saved.view || ROLES[user.role].menu[0][0];
+    state.residentId = Number(saved.residentId || 1);
+    state.dashboardTab = saved.dashboardTab || "evolucion";
+    state.pdfResidentId = Number(saved.pdfResidentId || state.residentId || 1);
+    state.pdfPeriodDays = saved.pdfPeriodDays ?? null;
+    state.registrosPage = Number(saved.registrosPage || 1);
+    state.registrosExportMode = saved.registrosExportMode || "all";
+    state.registrosExportFrom = saved.registrosExportFrom || "2026-06-01";
+    state.registrosExportTo = saved.registrosExportTo || "2026-06-15";
+    state.previousView = saved.previousView || null;
+    state.activeRecordReturnView = null;
+    return true;
+  } catch (error) {
+    clearSessionState();
+    return false;
+  }
+}
+
+function saveSessionState() {
+  if (!state.isAuthenticated) return;
+  try {
+    localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+      loggedUser: state.loggedUser,
+      role: state.role,
+      view: state.view,
+      residentId: state.residentId,
+      dashboardTab: state.dashboardTab,
+      pdfResidentId: state.pdfResidentId,
+      pdfPeriodDays: state.pdfPeriodDays,
+      registrosPage: state.registrosPage,
+      registrosExportMode: state.registrosExportMode,
+      registrosExportFrom: state.registrosExportFrom,
+      registrosExportTo: state.registrosExportTo,
+      previousView: state.previousView
+    }));
+  } catch (error) {
+    console.warn("No se pudo guardar la sesion local.", error);
+  }
+}
+
+function clearSessionState() {
+  try {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+  } catch (error) {
+    console.warn("No se pudo limpiar la sesion local.", error);
+  }
 }
 
 function renderRoleSelect() {
@@ -270,6 +338,7 @@ function renderShell() {
     });
   });
   renderView();
+  saveSessionState();
 }
 
 async function handleLogin(event) {
@@ -289,6 +358,7 @@ async function handleLogin(event) {
   renderRoleSelect();
   await loadResidentsFromApi();
   await loadRegistrosFromApi();
+  saveSessionState();
   renderAuthState();
 }
 
@@ -330,6 +400,7 @@ function logout() {
   state.role = "administrador";
   state.isAuthenticated = false;
   state.loggedUser = null;
+  clearSessionState();
   resetSessionState();
   renderRoleSelect();
   $("loginError").textContent = "Sesion cerrada.";
@@ -474,7 +545,7 @@ function renderResidentes(view) {
   view.innerHTML = page("Residentes", "Busqueda y ficha resumida del residente seleccionado.") +
     residentToolbar() +
     residentProfile(selectedResident()) +
-    residentsTable(false);
+    (state.role === "nutricionista" ? nutritionResidentWeightPanel(selectedResident()) : residentsTable(false));
   attachResidentButtons();
 }
 
@@ -648,11 +719,115 @@ function residentsTable(admin) {
   </div>`;
 }
 
+function nutritionResidentWeightPanel(resident) {
+  const entries = nutritionWeightEntries(resident);
+  const variation = nutritionWeightVariation(entries);
+  return `<div class="card nutrition-weight-panel">
+    <h2>Evolución de peso</h2>
+    <div class="notice">Muestra el peso inicial de ingreso y los pesos registrados en controles nutricionales posteriores. Se espera controlar aproximadamente 2 veces al mes.</div>
+    <div class="nutrition-weight-layout">
+      <div>
+        ${nutritionWeightChart(entries)}
+      </div>
+      <div class="nutrition-variation-grid">
+        ${nutritionVariationCard("Último control", variation.lastLabel, variation.lastWeight)}
+        ${nutritionVariationCard("Variación vs control anterior", variation.previousLabel, variation.previousPercent)}
+        ${nutritionVariationCard("Variación vs mes anterior", variation.monthLabel, variation.monthPercent)}
+      </div>
+    </div>
+  </div>`;
+}
+
+function nutritionWeightEntries(resident) {
+  const initialWeight = parsePesoNumber(resident.peso);
+  const initial = initialWeight ? [{
+    fecha: resident.ingreso || "",
+    label: "Ingreso",
+    peso: initialWeight,
+    initial: true
+  }] : [];
+  const controls = REGISTROS_NUTRI
+    .filter((row) => row.residente === resident.nombre && parsePesoNumber(row.peso))
+    .map((row) => ({
+      fecha: formatRegistroDateOnly(row.fecha),
+      label: formatRegistroDateOnly(row.fecha),
+      peso: parsePesoNumber(row.peso),
+      initial: false
+    }));
+  return [...initial, ...controls].sort((a, b) => parseAnyDate(a.fecha) - parseAnyDate(b.fecha));
+}
+
+function nutritionWeightVariation(entries) {
+  const controls = entries.filter((entry) => !entry.initial);
+  const last = controls.at(-1) || entries.at(-1);
+  const previous = entries.length > 1 ? entries[entries.indexOf(last) - 1] : null;
+  const previousMonth = last ? [...entries]
+    .filter((entry) => entry !== last && monthKey(entry.fecha) < monthKey(last.fecha))
+    .at(-1) : null;
+  return {
+    lastWeight: last ? `${formatChartNumber(last.peso)} kg` : "Sin datos",
+    lastLabel: last?.label || "Sin controles",
+    previousPercent: percentVariation(last, previous),
+    previousLabel: previous ? `Base: ${previous.label}` : "Sin control previo",
+    monthPercent: percentVariation(last, previousMonth),
+    monthLabel: previousMonth ? `Base: ${previousMonth.label}` : "Sin mes anterior"
+  };
+}
+
+function percentVariation(current, previous) {
+  if (!current || !previous || !previous.peso) return "Sin datos";
+  const value = ((current.peso - previous.peso) / previous.peso) * 100;
+  const sign = value > 0 ? "+" : "";
+  return `${sign}${formatChartNumber(value)}%`;
+}
+
+function monthKey(value) {
+  return String(value || "").slice(0, 7);
+}
+
+function nutritionVariationCard(label, context, value) {
+  return `<div class="nutrition-variation-card">
+    <small>${label}</small>
+    <strong>${value}</strong>
+    <span>${context}</span>
+  </div>`;
+}
+
+function nutritionWeightChart(entries) {
+  if (!entries.length) return `<div class="notice">Sin controles de peso registrados.</div>`;
+  const values = entries.map((entry) => entry.peso);
+  const minValue = Math.floor(Math.min(...values) - 1);
+  const maxValue = Math.ceil(Math.max(...values) + 1);
+  const padding = 42;
+  const width = 760;
+  const height = 230;
+  const span = Math.max(1, maxValue - minValue);
+  const xStep = entries.length > 1 ? (width - padding * 2) / (entries.length - 1) : 0;
+  const yFor = (value) => height - padding - ((value - minValue) / span) * (height - padding * 2);
+  const points = entries.map((entry, index) => ({
+    x: padding + index * xStep,
+    y: yFor(entry.peso),
+    ...entry
+  }));
+  const line = points.map((point) => `${point.x},${point.y}`).join(" ");
+  return `<svg class="chart-svg wide-chart" viewBox="0 0 ${width} ${height}" role="img" aria-label="Grafica de peso nutricional">
+    <line x1="${padding}" y1="${height - padding}" x2="${width - padding}" y2="${height - padding}" stroke="#d4dddf" stroke-width="1.5" />
+    <line x1="${padding}" y1="${padding}" x2="${padding}" y2="${height - padding}" stroke="#d4dddf" stroke-width="1.5" />
+    <text x="8" y="${padding + 4}" font-size="11" font-weight="700" fill="#465154">${formatChartNumber(maxValue)} kg</text>
+    <text x="8" y="${height - padding}" font-size="11" font-weight="700" fill="#465154">${formatChartNumber(minValue)} kg</text>
+    <polyline points="${line}" fill="none" stroke="#0f9a9a" stroke-width="3" />
+    ${points.map((point) => `<circle cx="${point.x}" cy="${point.y}" r="${point.initial ? 5 : 4}" fill="${point.initial ? "#f59e0b" : "#0f9a9a"}"><title>${point.label}: ${formatChartNumber(point.peso)} kg</title></circle>`).join("")}
+    ${points.map((point) => `<text x="${point.x - 24}" y="${height - 12}" font-size="10" font-weight="700" fill="#465154">${point.initial ? "Ingreso" : chartDateLabel(point.fecha)}</text>`).join("")}
+    ${points.map((point) => `<text x="${point.x - 14}" y="${point.y - 10}" font-size="10" font-weight="700" fill="#263238">${formatChartNumber(point.peso)} kg</text>`).join("")}
+  </svg>`;
+}
+
 function attachResidentButtons() {
   document.querySelectorAll(".resident-picker").forEach((button) => {
     button.addEventListener("click", () => {
       state.residentId = Number(button.dataset.id);
       renderView();
+      saveSessionState();
     });
   });
   document.querySelectorAll(".resident-edit").forEach((button) => {
@@ -1541,15 +1716,36 @@ function isNutriRecord(row) {
 }
 
 function nutritionSummary(row) {
-  return [
-    row.talla ? `Talla ${formatDecimalText(row.talla)}` : "",
-    row.imc ? `IMC ${formatDecimalText(row.imc)}` : "",
-    row.cc ? `CC ${row.cc}` : "",
-    row.cb ? `CB ${row.cb}` : "",
-    row.pt ? `PT ${row.pt}` : "",
-    row.cp ? `CP ${row.cp}` : "",
-    row.observacion || ""
-  ].filter(Boolean).join(" · ");
+  return `<div class="nutrition-inline-summary">
+    <div><b>Peso:</b> ${formatPesoValue(row.peso)}</div>
+    ${nutritionMeasurementsTable(row)}
+    <div>${row.observacion || "Sin observaciones."}</div>
+  </div>`;
+}
+
+function formatRegistroDateOnly(value) {
+  return String(value || "").split(" ")[0];
+}
+
+function formatPesoValue(value) {
+  const text = formatDecimalText(value || "");
+  if (!text) return "-";
+  return /kg/i.test(text) ? text : `${text} kg`;
+}
+
+function nutritionMeasurementsTable(row) {
+  const cells = [
+    formatDecimalText(row.imc || "-"),
+    formatDecimalText(row.talla || "-"),
+    formatDecimalText(row.cc || "-"),
+    formatDecimalText(row.cb || "-"),
+    formatDecimalText(row.pt || "-"),
+    formatDecimalText(row.cp || "-")
+  ];
+  return `<table class="anthro-table" aria-label="Mediciones antropometricas">
+    <thead><tr><th>IMC</th><th>Talla (cm)</th><th>CC (cm)</th><th>CB (cm)</th><th>PT (cm)</th><th>CP (cm)</th></tr></thead>
+    <tbody><tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr></tbody>
+  </table>`;
 }
 
 function displayRegistroTipo(tipo) {
@@ -2251,6 +2447,7 @@ function attachDashboardTabs() {
     button.addEventListener("click", () => {
       state.dashboardTab = button.dataset.tab;
       renderView();
+      saveSessionState();
     });
   });
 }
@@ -2676,14 +2873,14 @@ function renderMisRegistrosProfesional(view) {
 }
 
 function renderFormularioNutri(view) {
-  view.innerHTML = page("Registro nutricional", "Seleccione un residente activo. Edad, peso y sexo se autocompletan desde la ficha.", adminFormBackButton()) +
+  view.innerHTML = page("Registro nutricional", "Seleccione un residente activo. Edad y sexo se autocompletan; el peso corresponde al control registrado en la visita.", adminFormBackButton()) +
     `<div class="form-section">
       <div class="grid3">
         <div><label>Residente</label>${residentSelect("nutriResidente")}</div>
         <div><label>Fecha</label><input id="nutriFecha" type="date"></div>
         <div><label>Hora</label><input id="nutriHora" type="time"></div>
         <div><label>Edad</label><input id="nutriEdad" readonly></div>
-        <div><label>Peso inicial</label><input id="nutriPeso" readonly></div>
+        <div><label>Peso Actual/Registrado</label><input id="nutriPeso" placeholder="Ej: 56,6"></div>
         <div><label>Sexo</label><input id="nutriSexo" readonly></div>
         <div><label>Estatura</label><input id="nutriTalla" placeholder="Ej: 1,62"></div>
         <div><label>IMC</label><input id="nutriImc" placeholder="Ej: 22,4"></div>
@@ -2698,7 +2895,7 @@ function renderFormularioNutri(view) {
     <button class="btn primary" onclick="confirmNutri()">Guardar registro</button>`;
   bindNutriResident();
   bindNutriDateRules();
-  bindDecimalCommaValidation(["nutriTalla", "nutriImc"]);
+  bindDecimalCommaValidation(["nutriPeso", "nutriTalla", "nutriImc"]);
 }
 
 function bindNutriResident() {
@@ -2720,6 +2917,7 @@ function confirmNutri() {
     return;
   }
   const decimalError = validateDecimalCommaFields([
+    { id: "nutriPeso", label: "peso actual/registrado" },
     { id: "nutriTalla", label: "estatura" },
     { id: "nutriImc", label: "IMC" }
   ]);
@@ -2732,7 +2930,7 @@ function confirmNutri() {
       fecha: `${$("nutriFecha").value || "2026-06-14"} ${$("nutriHora").value || "12:00"}`,
       residente: resident.nombre,
       edad: resident.edad,
-      peso: resident.peso,
+      peso: $("nutriPeso").value || resident.peso,
       sexo: resident.sexo,
       talla: $("nutriTalla").value || "",
       imc: $("nutriImc").value || "-",
@@ -2776,7 +2974,36 @@ function validateNutriDate() {
 
 function renderMisRegistrosNutri(view) {
   view.innerHTML = page("Mis registros nutricionales", "Los registros pueden editarse solo hasta 16 horas despues de su ingreso.") +
-    registrosTable(REGISTROS_NUTRI, ["Fecha", "Residente", "IMC", "Observacion"], "nutri", "misRegistrosNutri");
+    registrosNutricionalesTable(REGISTROS_NUTRI, "misRegistrosNutri");
+}
+
+function registrosNutricionalesTable(rows, returnView = "misRegistrosNutri") {
+  const sortedRows = [...rows].sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
+  return `<div class="card table-wrap nutrition-records-table"><table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Residente</th>
+        <th>Peso (kg)</th>
+        <th>Mediciones Antropométricas</th>
+        <th>Observaciones/Indicaciones</th>
+        <th>Estado Edición</th>
+        <th>Acción</th>
+      </tr>
+    </thead>
+    <tbody>${sortedRows.map((row) => {
+      const index = REGISTROS_NUTRI.indexOf(row);
+      return `<tr>
+        <td>${formatRegistroDateOnly(row.fecha)}</td>
+        <td>${row.residente || ""}</td>
+        <td>${formatPesoValue(row.peso)}</td>
+        <td>${nutritionMeasurementsTable(row)}</td>
+        <td>${row.observacion || "Sin observaciones."}</td>
+        <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
+        <td>${index >= 0 ? recordActionButtons(row, "nutri", returnView) : '<button class="btn ghost" disabled>Ver</button>'}</td>
+      </tr>`;
+    }).join("")}</tbody>
+  </table></div>`;
 }
 
 function renderFormulariosAdmin(view) {
@@ -2836,7 +3063,7 @@ function registrosUsuariosTable() {
   return `<div class="card table-wrap"><table>
     <thead><tr><th>Fecha</th><th>Residente</th><th>Origen</th><th>Usuario</th><th>Cuidadora</th><th>Detalle</th><th>Estado</th><th>Accion</th></tr></thead>
     <tbody>${pageRows.map(({ source, index, row, origen }) => `<tr>
-      <td>${row.fecha || ""}</td>
+      <td>${source === "nutri" ? formatRegistroDateOnly(row.fecha) : row.fecha || ""}</td>
       <td>${row.residente || ""}</td>
       <td>${origen}</td>
       <td>${row.usuario || row.rol || "nutricion@hogarantu.cl"}</td>
@@ -2865,6 +3092,7 @@ function registrosPagination(totalPages) {
 function setRegistrosPage(page) {
   state.registrosPage = page;
   renderView();
+  saveSessionState();
 }
 
 function bindRegistrosUsuariosExport() {
@@ -2875,12 +3103,15 @@ function bindRegistrosUsuariosExport() {
   if (!mode || !from || !to || !button) return;
   mode.addEventListener("change", () => {
     state.registrosExportMode = mode.value;
+    saveSessionState();
   });
   from.addEventListener("input", () => {
     state.registrosExportFrom = from.value;
+    saveSessionState();
   });
   to.addEventListener("input", () => {
     state.registrosExportTo = to.value;
+    saveSessionState();
   });
   button.addEventListener("click", () => exportRegistrosUsuariosExcel());
 }
@@ -3022,7 +3253,7 @@ function renderNutriRecordForm(row, index, returnView = "registros", readOnly = 
         <div><label>Residente</label><input value="${row.residente || ""}" readonly></div>
         <div><label>Sexo</label><input value="${row.sexo || resident.sexo || ""}" readonly></div>
         <div><label>Edad</label><input value="${row.edad || resident.edad || ""}" readonly></div>
-        <div><label>Peso inicial</label><input value="${formatDecimalText(row.peso || resident.peso || "")}" readonly></div>
+        <div><label>Peso Actual/Registrado</label><input id="editNutriPeso" value="${formatDecimalText(row.peso || resident.peso || "")}" ${lockAttr}></div>
         <div><label>Usuario</label><input value="${row.usuario || "nutricion@hogarantu.cl"}" readonly></div>
       </div>
     </div>
@@ -3049,6 +3280,7 @@ function saveNutriRecordEdit(index) {
   openModal("Confirmar edicion", "Desea guardar los cambios de este registro nutricional?", () => {
     const row = REGISTROS_NUTRI[index];
     row.fecha = $("editNutriFecha").value;
+    row.peso = $("editNutriPeso").value || row.peso;
     row.talla = $("editNutriTalla").value;
     row.imc = $("editNutriImc").value || "-";
     row.cc = $("editNutriCc").value;
@@ -3640,6 +3872,7 @@ function attachPdfControls() {
       state.pdfEmail = resident.mail || "";
       state.pdfGenerated = false;
       renderView();
+      saveSessionState();
     });
   }
   if (email) {
@@ -3653,6 +3886,7 @@ function attachPdfControls() {
       state.pdfPeriodDays = Number(button.dataset.days);
       state.pdfGenerated = false;
       renderView();
+      saveSessionState();
     });
   });
   if (generate) {

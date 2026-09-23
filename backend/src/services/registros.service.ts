@@ -80,7 +80,7 @@ export async function listarRegistros() {
   );
   const [nutri] = await pool.execute<RowDataPacket[]>(
     `SELECT rn.id, rn.residente_id, r.nombre_completo AS residente, u.email AS usuario,
-            rn.fecha_hora, rn.imc, rn.observaciones, rn.datos_json
+            rn.fecha_hora, rn.peso_kg, rn.imc, rn.observaciones, rn.datos_json
      FROM registros_nutricion rn
      JOIN residentes r ON r.id = rn.residente_id
      JOIN usuarios u ON u.id = rn.usuario_id

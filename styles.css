@@ -719,6 +719,77 @@ th {
   color: var(--red);
 }
 
+.nutrition-inline-summary {
+  display: grid;
+  gap: 6px;
+  min-width: 360px;
+}
+
+.anthro-table {
+  width: auto;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.anthro-table th,
+.anthro-table td {
+  min-width: 58px;
+  padding: 5px 7px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.anthro-table th:last-child,
+.anthro-table td:last-child {
+  min-width: 58px;
+}
+
+.nutrition-records-table td:nth-child(4) {
+  min-width: 450px;
+}
+
+.nutrition-records-table td:nth-child(5) {
+  min-width: 260px;
+}
+
+.nutrition-weight-panel {
+  margin-top: 14px;
+}
+
+.nutrition-weight-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(220px, 0.8fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.nutrition-variation-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.nutrition-variation-card {
+  border: 1px solid #e4eaeb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #f9fcfc;
+}
+
+.nutrition-variation-card small,
+.nutrition-variation-card span {
+  display: block;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.nutrition-variation-card strong {
+  display: block;
+  margin: 4px 0;
+  color: var(--teal-dark);
+  font-size: 22px;
+}
+
 .timeline {
   border-left: 5px solid var(--teal);
   background: #fff;
@@ -953,6 +1024,7 @@ th {
 
   .metrics,
   .chart-grid,
+  .nutrition-weight-layout,
   .grid2,
   .grid3 {
     grid-template-columns: 1fr;
