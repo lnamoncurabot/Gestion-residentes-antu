@@ -20,6 +20,7 @@
   registrosExportMode: "all",
   registrosExportFrom: "2026-06-01",
   registrosExportTo: "2026-06-15",
+  registrosUserScope: "general",
   editReturnView: "registros",
   activeRecordReturnView: null,
   previousView: null
@@ -277,6 +278,7 @@ function restoreSessionState() {
     state.registrosExportMode = saved.registrosExportMode || "all";
     state.registrosExportFrom = saved.registrosExportFrom || "2026-06-01";
     state.registrosExportTo = saved.registrosExportTo || "2026-06-15";
+    state.registrosUserScope = saved.registrosUserScope || "general";
     state.previousView = saved.previousView || null;
     state.activeRecordReturnView = null;
     return true;
@@ -301,6 +303,7 @@ function saveSessionState() {
       registrosExportMode: state.registrosExportMode,
       registrosExportFrom: state.registrosExportFrom,
       registrosExportTo: state.registrosExportTo,
+      registrosUserScope: state.registrosUserScope,
       previousView: state.previousView
     }));
   } catch (error) {
@@ -393,6 +396,7 @@ function resetSessionState() {
   state.registrosExportMode = "all";
   state.registrosExportFrom = "2026-06-01";
   state.registrosExportTo = "2026-06-15";
+  state.registrosUserScope = "general";
   state.editReturnView = "registros";
 }
 
@@ -1733,6 +1737,12 @@ function formatPesoValue(value) {
   return /kg/i.test(text) ? text : `${text} kg`;
 }
 
+function formatPesoNumberOnly(value) {
+  const parsed = parsePesoNumber(value);
+  if (parsed === null || parsed === undefined || Number.isNaN(parsed)) return "";
+  return formatDecimalText(Number.isInteger(parsed) ? String(parsed) : String(parsed));
+}
+
 function nutritionMeasurementsTable(row) {
   const cells = [
     formatDecimalText(row.imc || "-"),
@@ -2880,7 +2890,7 @@ function renderFormularioNutri(view) {
         <div><label>Fecha</label><input id="nutriFecha" type="date"></div>
         <div><label>Hora</label><input id="nutriHora" type="time"></div>
         <div><label>Edad</label><input id="nutriEdad" readonly></div>
-        <div><label>Peso Actual/Registrado</label><input id="nutriPeso" placeholder="Ej: 56,6"></div>
+        <div><label>Peso Actual (Kg)</label><input id="nutriPeso" inputmode="decimal" placeholder="Ej: 56,6"></div>
         <div><label>Sexo</label><input id="nutriSexo" readonly></div>
         <div><label>Estatura</label><input id="nutriTalla" placeholder="Ej: 1,62"></div>
         <div><label>IMC</label><input id="nutriImc" placeholder="Ej: 22,4"></div>
@@ -2902,7 +2912,7 @@ function bindNutriResident() {
   const update = () => {
     const r = RESIDENTES.find((resident) => resident.id === Number($("nutriResidente").value));
     $("nutriEdad").value = r.edad;
-    $("nutriPeso").value = formatDecimalText(r.peso);
+    $("nutriPeso").value = formatPesoNumberOnly(r.peso);
     $("nutriSexo").value = r.sexo;
   };
   $("nutriResidente").addEventListener("change", update);
@@ -2917,7 +2927,7 @@ function confirmNutri() {
     return;
   }
   const decimalError = validateDecimalCommaFields([
-    { id: "nutriPeso", label: "peso actual/registrado" },
+    { id: "nutriPeso", label: "peso actual" },
     { id: "nutriTalla", label: "estatura" },
     { id: "nutriImc", label: "IMC" }
   ]);
@@ -2996,7 +3006,7 @@ function registrosNutricionalesTable(rows, returnView = "misRegistrosNutri") {
       return `<tr>
         <td>${formatRegistroDateOnly(row.fecha)}</td>
         <td>${row.residente || ""}</td>
-        <td>${formatPesoValue(row.peso)}</td>
+        <td>${formatPesoNumberOnly(row.peso) || "-"}</td>
         <td>${nutritionMeasurementsTable(row)}</td>
         <td>${row.observacion || "Sin observaciones."}</td>
         <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
@@ -3030,11 +3040,14 @@ function renderRegistrosUsuarios(view) {
 }
 
 function registrosUsuariosRows() {
-  return [
+  const rows = [
     ...REGISTROS_CAM.map((row, index) => ({ source: "cam", index, row, origen: "CAM" })),
     ...REGISTROS_PRO.map((row, index) => ({ source: "pro", index, row, origen: row.rol || "Profesional" })),
     ...REGISTROS_NUTRI.map((row, index) => ({ source: "nutri", index, row, origen: "Nutricionista" }))
-  ].sort((a, b) => parseRegistroDate(b.row.fecha) - parseRegistroDate(a.row.fecha));
+  ];
+  return rows
+    .filter(({ source }) => state.registrosUserScope === "nutri" ? source === "nutri" : source !== "nutri")
+    .sort((a, b) => parseRegistroDate(b.row.fecha) - parseRegistroDate(a.row.fecha));
 }
 
 function registrosUsuariosExportPanel() {
@@ -3050,6 +3063,7 @@ function registrosUsuariosExportPanel() {
     </div>
     <div class="form-actions">
       <button class="btn primary" id="exportRegistrosExcel">Descargar Excel</button>
+      <button class="btn orange" id="toggleRegistrosNutricion">${state.registrosUserScope === "nutri" ? "Registros Generales" : "Registros Nutrición"}</button>
     </div>
   </div>`;
 }
@@ -3100,6 +3114,7 @@ function bindRegistrosUsuariosExport() {
   const from = $("registrosExportFrom");
   const to = $("registrosExportTo");
   const button = $("exportRegistrosExcel");
+  const nutritionButton = $("toggleRegistrosNutricion");
   if (!mode || !from || !to || !button) return;
   mode.addEventListener("change", () => {
     state.registrosExportMode = mode.value;
@@ -3114,6 +3129,14 @@ function bindRegistrosUsuariosExport() {
     saveSessionState();
   });
   button.addEventListener("click", () => exportRegistrosUsuariosExcel());
+  if (nutritionButton) {
+    nutritionButton.addEventListener("click", () => {
+      state.registrosUserScope = state.registrosUserScope === "nutri" ? "general" : "nutri";
+      state.registrosPage = 1;
+      renderView();
+      saveSessionState();
+    });
+  }
 }
 
 function exportRegistrosUsuariosExcel() {
@@ -3253,7 +3276,7 @@ function renderNutriRecordForm(row, index, returnView = "registros", readOnly = 
         <div><label>Residente</label><input value="${row.residente || ""}" readonly></div>
         <div><label>Sexo</label><input value="${row.sexo || resident.sexo || ""}" readonly></div>
         <div><label>Edad</label><input value="${row.edad || resident.edad || ""}" readonly></div>
-        <div><label>Peso Actual/Registrado</label><input id="editNutriPeso" value="${formatDecimalText(row.peso || resident.peso || "")}" ${lockAttr}></div>
+        <div><label>Peso Actual (Kg)</label><input id="editNutriPeso" value="${formatPesoNumberOnly(row.peso || resident.peso || "")}" ${lockAttr}></div>
         <div><label>Usuario</label><input value="${row.usuario || "nutricion@hogarantu.cl"}" readonly></div>
       </div>
     </div>

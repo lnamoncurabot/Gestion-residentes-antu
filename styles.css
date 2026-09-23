@@ -420,6 +420,11 @@ button.btn {
   color: #fff;
 }
 
+.btn.orange {
+  background: #f97316;
+  color: #fff;
+}
+
 .btn:disabled {
   background: #c8d4d6;
   color: #687579;
@@ -727,26 +732,30 @@ th {
 
 .anthro-table {
   width: auto;
-  min-width: 420px;
+  min-width: 0;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: 13.8px;
+  table-layout: fixed;
 }
 
 .anthro-table th,
 .anthro-table td {
-  min-width: 58px;
-  padding: 5px 7px;
+  width: 68px;
+  min-width: 68px;
+  max-width: 68px;
+  padding: 5px 6px;
   text-align: center;
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .anthro-table th:last-child,
 .anthro-table td:last-child {
-  min-width: 58px;
+  min-width: 68px;
 }
 
 .nutrition-records-table td:nth-child(4) {
-  min-width: 450px;
+  min-width: 430px;
 }
 
 .nutrition-records-table td:nth-child(5) {
