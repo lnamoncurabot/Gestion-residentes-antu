@@ -250,7 +250,7 @@ export async function actualizarRegistro(origen: RegistroOrigen, id: number, pay
     if (!affectedRows(result)) {
       throw new Error("No se encontro el registro solicitado.");
     }
-    return { id, origen, ...payload };
+    return { ...payload, id, origen };
   }
 
   if (origen === "pro") {
@@ -274,7 +274,7 @@ export async function actualizarRegistro(origen: RegistroOrigen, id: number, pay
     if (!affectedRows(result)) {
       throw new Error("No se encontro el registro solicitado.");
     }
-    return { id, origen, ...payload };
+    return { ...payload, id, origen };
   }
 
   const [result] = await pool.execute<ResultSetHeader>(
@@ -299,7 +299,7 @@ export async function actualizarRegistro(origen: RegistroOrigen, id: number, pay
   if (!affectedRows(result)) {
     throw new Error("No se encontro el registro solicitado.");
   }
-  return { id, origen, ...payload };
+  return { ...payload, id, origen };
 }
 
 export async function eliminarRegistro(origen: RegistroOrigen, id: number) {
