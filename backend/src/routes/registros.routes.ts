@@ -30,6 +30,16 @@ registrosRouter.put("/:origen/:id", async (req, res, next) => {
   }
 });
 
+registrosRouter.patch("/:origen/:id", async (req, res, next) => {
+  try {
+    const origen = req.params.origen as "cam" | "pro" | "nutri";
+    const id = Number(req.params.id);
+    res.json(await actualizarRegistro(origen, id, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 registrosRouter.delete("/:origen/:id", async (req, res, next) => {
   try {
     const origen = req.params.origen as "cam" | "pro" | "nutri";

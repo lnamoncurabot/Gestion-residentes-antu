@@ -48,7 +48,18 @@ async function apiRequest(path, options = {}) {
     ...options
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : null;
+  let data = null;
+  if (text) {
+    try {
+      data = JSON.parse(text);
+    } catch (_error) {
+      const isHtml = /^\s*</.test(text);
+      const method = options.method || "GET";
+      throw new Error(isHtml
+        ? `La API no reconocio ${method} ${path}. Espera a que Render termine el deploy del backend o revisa si el deploy fallo.`
+        : `La API respondio en un formato no valido: ${text.slice(0, 120)}`);
+    }
+  }
   if (!response.ok) {
     throw new Error(data?.message || `Error HTTP ${response.status}`);
   }
@@ -233,7 +244,7 @@ async function persistRegistro(origen, resident, registro) {
 async function updateRegistro(source, resident, registro) {
   if (!registro?.id) return { ok: true, ...registro };
   return apiRequest(`/registros/${source}/${registro.id}`, {
-    method: "PUT",
+    method: "PATCH",
     body: JSON.stringify(registroToApiPayload(source, resident, registro))
   });
 }

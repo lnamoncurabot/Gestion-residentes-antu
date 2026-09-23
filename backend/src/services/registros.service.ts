@@ -38,6 +38,10 @@ function parseDecimal(value?: string | number | null) {
   return match ? Number(match[0]) : null;
 }
 
+function affectedRows(result: ResultSetHeader) {
+  return Number((result as ResultSetHeader & { affectedRows?: number }).affectedRows || 0);
+}
+
 function parsePressure(value?: string) {
   const [sistolica, diastolica] = String(value || "").split("/").map((item) => Number(item));
   return {
@@ -243,7 +247,7 @@ export async function actualizarRegistro(origen: RegistroOrigen, id: number, pay
         datos: JSON.stringify(payload.datos || {})
       }
     );
-    if (!result.affectedRows) {
+    if (!affectedRows(result)) {
       throw new Error("No se encontro el registro solicitado.");
     }
     return { id, origen, ...payload };
@@ -267,7 +271,7 @@ export async function actualizarRegistro(origen: RegistroOrigen, id: number, pay
         datos: JSON.stringify(payload.datos || {})
       }
     );
-    if (!result.affectedRows) {
+    if (!affectedRows(result)) {
       throw new Error("No se encontro el registro solicitado.");
     }
     return { id, origen, ...payload };
@@ -292,7 +296,7 @@ export async function actualizarRegistro(origen: RegistroOrigen, id: number, pay
       detalle: payload.detalle || ""
     }
   );
-  if (!result.affectedRows) {
+  if (!affectedRows(result)) {
     throw new Error("No se encontro el registro solicitado.");
   }
   return { id, origen, ...payload };
@@ -314,7 +318,7 @@ export async function eliminarRegistro(origen: RegistroOrigen, id: number) {
     { id }
   );
 
-  if (!result.affectedRows) {
+  if (!affectedRows(result)) {
     throw new Error("No se encontro el registro solicitado.");
   }
 
