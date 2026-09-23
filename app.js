@@ -1745,7 +1745,7 @@ function formatPesoNumberOnly(value) {
 
 function nutritionMeasurementsTable(row) {
   const cells = [
-    formatDecimalText(row.imc || "-"),
+    formatImcText(row.imc || "-"),
     formatDecimalText(row.talla || "-"),
     formatDecimalText(row.cc || "-"),
     formatDecimalText(row.cb || "-"),
@@ -1756,6 +1756,13 @@ function nutritionMeasurementsTable(row) {
     <thead><tr><th>IMC</th><th>Talla (cm)</th><th>CC (cm)</th><th>CB (cm)</th><th>PT (cm)</th><th>CP (cm)</th></tr></thead>
     <tbody><tr>${cells.map((cell) => `<td>${cell}</td>`).join("")}</tr></tbody>
   </table>`;
+}
+
+function formatImcText(value) {
+  const normalized = String(value || "").replace(",", ".").trim();
+  const parsed = Number.parseFloat(normalized);
+  if (Number.isNaN(parsed)) return value || "-";
+  return parsed.toFixed(1).replace(".", ",");
 }
 
 function displayRegistroTipo(tipo) {
@@ -2994,8 +3001,8 @@ function registrosNutricionalesTable(rows, returnView = "misRegistrosNutri") {
       <tr>
         <th>Fecha</th>
         <th>Residente</th>
-        <th>Peso (kg)</th>
-        <th>Mediciones Antropométricas</th>
+        <th>Peso (Kg)</th>
+        <th>Mediciones Antropomórficas</th>
         <th>Observaciones/Indicaciones</th>
         <th>Estado Edición</th>
         <th>Acción</th>
@@ -3074,6 +3081,9 @@ function registrosUsuariosTable() {
   const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
   state.registrosPage = Math.min(Math.max(1, state.registrosPage), totalPages);
   const pageRows = rows.slice((state.registrosPage - 1) * pageSize, state.registrosPage * pageSize);
+  if (state.registrosUserScope === "nutri") {
+    return registrosUsuariosNutricionTable(pageRows, totalPages);
+  }
   return `<div class="card table-wrap"><table>
     <thead><tr><th>Fecha</th><th>Residente</th><th>Origen</th><th>Usuario</th><th>Cuidadora</th><th>Detalle</th><th>Estado</th><th>Accion</th></tr></thead>
     <tbody>${pageRows.map(({ source, index, row, origen }) => `<tr>
@@ -3083,6 +3093,35 @@ function registrosUsuariosTable() {
       <td>${row.usuario || row.rol || "nutricion@hogarantu.cl"}</td>
       <td>${row.cuidadora || "-"}</td>
       <td>${registroRowDetail(source, row)}</td>
+      <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
+      <td>${adminRecordActionButtons(source, index, row)}</td>
+    </tr>`).join("")}</tbody>
+  </table>
+  ${registrosPagination(totalPages)}
+  </div>`;
+}
+
+function registrosUsuariosNutricionTable(pageRows, totalPages) {
+  return `<div class="card table-wrap nutrition-records-table"><table>
+    <thead>
+      <tr>
+        <th>Fecha</th>
+        <th>Residente</th>
+        <th>Usuario</th>
+        <th>Peso (Kg)</th>
+        <th>Mediciones Antropomórficas</th>
+        <th>Observaciones/Indicaciones</th>
+        <th>Estado</th>
+        <th>Acción</th>
+      </tr>
+    </thead>
+    <tbody>${pageRows.map(({ source, index, row }) => `<tr>
+      <td>${formatRegistroDateOnly(row.fecha)}</td>
+      <td>${row.residente || ""}</td>
+      <td>${row.usuario || row.rol || "nutricion@hogarantu.cl"}</td>
+      <td>${formatPesoNumberOnly(row.peso) || "-"}</td>
+      <td>${nutritionMeasurementsTable(row)}</td>
+      <td>${row.observacion || "Sin observaciones."}</td>
       <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
       <td>${adminRecordActionButtons(source, index, row)}</td>
     </tr>`).join("")}</tbody>
