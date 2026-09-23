@@ -3118,11 +3118,10 @@ function registrosUsuariosTable() {
     return registrosUsuariosNutricionTable(pageRows, totalPages);
   }
   return `<div class="card table-wrap"><table>
-    <thead><tr><th>Fecha</th><th>Residente</th><th>Origen</th><th>Usuario</th><th>Cuidadora</th><th>Detalle</th><th>Estado</th><th>Accion</th></tr></thead>
-    <tbody>${pageRows.map(({ source, index, row, origen }) => `<tr>
+    <thead><tr><th>Fecha</th><th>Residente</th><th>Usuario</th><th>Cuidadora</th><th>Detalle</th><th>Estado</th><th>Accion</th></tr></thead>
+    <tbody>${pageRows.map(({ source, index, row }) => `<tr>
       <td>${source === "nutri" ? formatRegistroDateOnly(row.fecha) : row.fecha || ""}</td>
       <td>${row.residente || ""}</td>
-      <td>${origen}</td>
       <td>${row.usuario || row.rol || "nutricion@hogarantu.cl"}</td>
       <td>${row.cuidadora || "-"}</td>
       <td>${registroRowDetail(source, row)}</td>
@@ -3242,10 +3241,9 @@ function exportRegistrosUsuariosExcel() {
     if (!from || !to || from > to) return false;
     const date = parseRegistroDate(row.fecha);
     return date >= from && date <= to;
-  }).map(({ row, origen }) => ({
+  }).map(({ row }) => ({
     fecha: row.fecha || "",
     residente: row.residente || "",
-    origen,
     usuario: row.usuario || row.rol || "nutricion@hogarantu.cl",
     cuidadora: row.cuidadora || "",
     detalle: row.detalle || row.registro || row.observacion || "",
@@ -3264,7 +3262,7 @@ function exportRegistrosUsuariosExcel() {
     <h1>Registros de usuarios</h1>
     <p>Periodo: ${periodo}</p>
     ${excelTable("Registros usuarios", rows, [
-      ["Fecha", "fecha"], ["Residente", "residente"], ["Origen", "origen"], ["Usuario", "usuario"], ["Cuidadora", "cuidadora"], ["Detalle", "detalle"], ["Estado", "estado"]
+      ["Fecha", "fecha"], ["Residente", "residente"], ["Usuario", "usuario"], ["Cuidadora", "cuidadora"], ["Detalle", "detalle"], ["Estado", "estado"]
     ])}
   </body></html>`;
   downloadHtmlExcel(html, `registros_usuarios_${state.registrosExportMode === "all" ? "todos" : `${state.registrosExportFrom}_${state.registrosExportTo}`}.xls`);
