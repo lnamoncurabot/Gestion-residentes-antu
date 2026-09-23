@@ -760,14 +760,62 @@ th {
   vertical-align: middle;
 }
 
-.nutrition-records-table th:nth-child(5),
-.nutrition-records-table td:nth-child(5) {
-  min-width: 500px;
+.nutrition-records-table table {
+  table-layout: fixed;
+  min-width: 1180px;
 }
 
-.nutrition-records-table th:nth-child(6),
-.nutrition-records-table td:nth-child(6) {
-  min-width: 260px;
+.nutrition-records-table th,
+.nutrition-records-table td {
+  padding: 8px 8px;
+}
+
+.nutrition-records-table .anthro-group-heading {
+  text-align: center;
+}
+
+.nutrition-records-table .nutri-col-date {
+  width: 96px;
+}
+
+.nutrition-records-table .nutri-col-resident {
+  width: 150px;
+}
+
+.nutrition-records-table .nutri-col-user {
+  width: 190px;
+}
+
+.nutrition-records-table .nutri-col-weight {
+  width: 76px;
+}
+
+.nutrition-records-table .nutri-col-measure {
+  width: 72px;
+}
+
+.nutrition-records-table .nutri-col-notes {
+  width: 240px;
+}
+
+.nutrition-records-table .nutri-col-status {
+  width: 92px;
+}
+
+.nutrition-records-table .nutri-col-action {
+  width: 150px;
+}
+
+.nutrition-records-table td:nth-child(1),
+.nutrition-records-table td:nth-child(2),
+.nutrition-records-table td:nth-child(3),
+.nutrition-records-table .nutri-measure-cell {
+  white-space: nowrap;
+}
+
+.nutrition-records-table .nutri-measure-cell {
+  text-align: center;
+  font-size: 14px;
 }
 
 .nutrition-weight-panel {

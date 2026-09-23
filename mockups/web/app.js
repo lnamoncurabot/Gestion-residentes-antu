@@ -1758,6 +1758,17 @@ function nutritionMeasurementsTable(row) {
   </table>`;
 }
 
+function nutritionMeasurementCells(row) {
+  return [
+    formatImcText(row.imc || "-"),
+    formatDecimalText(row.talla || "-"),
+    formatDecimalText(row.cc || "-"),
+    formatDecimalText(row.cb || "-"),
+    formatDecimalText(row.pt || "-"),
+    formatDecimalText(row.cp || "-")
+  ].map((cell) => `<td class="nutri-measure-cell">${cell}</td>`).join("");
+}
+
 function formatImcText(value) {
   const normalized = String(value || "").replace(",", ".").trim();
   const parsed = Number.parseFloat(normalized);
@@ -2997,15 +3008,37 @@ function renderMisRegistrosNutri(view) {
 function registrosNutricionalesTable(rows, returnView = "misRegistrosNutri") {
   const sortedRows = [...rows].sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha));
   return `<div class="card table-wrap nutrition-records-table"><table>
+    <colgroup>
+      <col class="nutri-col-date">
+      <col class="nutri-col-resident">
+      <col class="nutri-col-weight">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-notes">
+      <col class="nutri-col-status">
+      <col class="nutri-col-action">
+    </colgroup>
     <thead>
       <tr>
-        <th>Fecha</th>
-        <th>Residente</th>
-        <th>Peso (Kg)</th>
-        <th>Mediciones Antropomórficas</th>
-        <th>Observaciones/Indicaciones</th>
-        <th>Estado Edición</th>
-        <th>Acción</th>
+        <th rowspan="2">Fecha</th>
+        <th rowspan="2">Residente</th>
+        <th rowspan="2">Peso (Kg)</th>
+        <th colspan="6" class="anthro-group-heading">Mediciones Antropomórficas</th>
+        <th rowspan="2">Observaciones/Indicaciones</th>
+        <th rowspan="2">Estado Edición</th>
+        <th rowspan="2">Acción</th>
+      </tr>
+      <tr>
+        <th>IMC</th>
+        <th>Talla (cm)</th>
+        <th>CC (cm)</th>
+        <th>CB (cm)</th>
+        <th>PT (cm)</th>
+        <th>CP (cm)</th>
       </tr>
     </thead>
     <tbody>${sortedRows.map((row) => {
@@ -3014,7 +3047,7 @@ function registrosNutricionalesTable(rows, returnView = "misRegistrosNutri") {
         <td>${formatRegistroDateOnly(row.fecha)}</td>
         <td>${row.residente || ""}</td>
         <td>${formatPesoNumberOnly(row.peso) || "-"}</td>
-        <td>${nutritionMeasurementsTable(row)}</td>
+        ${nutritionMeasurementCells(row)}
         <td>${row.observacion || "Sin observaciones."}</td>
         <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
         <td>${index >= 0 ? recordActionButtons(row, "nutri", returnView) : '<button class="btn ghost" disabled>Ver</button>'}</td>
@@ -3103,16 +3136,39 @@ function registrosUsuariosTable() {
 
 function registrosUsuariosNutricionTable(pageRows, totalPages) {
   return `<div class="card table-wrap nutrition-records-table"><table>
+    <colgroup>
+      <col class="nutri-col-date">
+      <col class="nutri-col-resident">
+      <col class="nutri-col-user">
+      <col class="nutri-col-weight">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-measure">
+      <col class="nutri-col-notes">
+      <col class="nutri-col-status">
+      <col class="nutri-col-action">
+    </colgroup>
     <thead>
       <tr>
-        <th>Fecha</th>
-        <th>Residente</th>
-        <th>Usuario</th>
-        <th>Peso (Kg)</th>
-        <th>Mediciones Antropomórficas</th>
-        <th>Observaciones/Indicaciones</th>
-        <th>Estado</th>
-        <th>Acción</th>
+        <th rowspan="2">Fecha</th>
+        <th rowspan="2">Residente</th>
+        <th rowspan="2">Usuario</th>
+        <th rowspan="2">Peso (Kg)</th>
+        <th colspan="6" class="anthro-group-heading">Mediciones Antropomórficas</th>
+        <th rowspan="2">Observaciones/Indicaciones</th>
+        <th rowspan="2">Estado</th>
+        <th rowspan="2">Acción</th>
+      </tr>
+      <tr>
+        <th>IMC</th>
+        <th>Talla (cm)</th>
+        <th>CC (cm)</th>
+        <th>CB (cm)</th>
+        <th>PT (cm)</th>
+        <th>CP (cm)</th>
       </tr>
     </thead>
     <tbody>${pageRows.map(({ source, index, row }) => `<tr>
@@ -3120,7 +3176,7 @@ function registrosUsuariosNutricionTable(pageRows, totalPages) {
       <td>${row.residente || ""}</td>
       <td>${row.usuario || row.rol || "nutricion@hogarantu.cl"}</td>
       <td>${formatPesoNumberOnly(row.peso) || "-"}</td>
-      <td>${nutritionMeasurementsTable(row)}</td>
+      ${nutritionMeasurementCells(row)}
       <td>${row.observacion || "Sin observaciones."}</td>
       <td>${row.editable ? '<span class="badge green">Editable</span>' : '<span class="badge red">Bloqueado</span>'}</td>
       <td>${adminRecordActionButtons(source, index, row)}</td>
