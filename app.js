@@ -186,6 +186,11 @@ function normalizeNutriRegistro(row) {
     residente: row.residente || datos.residente || "",
     peso: formatPeso(row.peso_kg ?? row.peso ?? datos.peso),
     imc: row.imc ?? datos.imc ?? "-",
+    talla: row.talla ?? row.talla_m ?? datos.talla ?? "",
+    cc: row.cc ?? datos.cc ?? "",
+    cb: row.cb ?? datos.cb ?? "",
+    pt: row.pt ?? datos.pt ?? "",
+    cp: row.cp ?? datos.cp ?? "",
     observacion: row.observaciones || row.observacion || datos.observacion || "Sin observaciones.",
     editable: true
   };
@@ -630,6 +635,10 @@ function normalizedText(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+function residentRecordMatches(row, resident) {
+  return normalizedText(row?.residente).trim() === normalizedText(resident?.nombre).trim();
+}
+
 function residentRequiresHgt(resident) {
   const patologias = normalizedText(resident?.patologias || resident?.patologias_ingreso || "");
   return /\bdiabet|diabetes|hiperglic|hipergluc|glicemia|glucosa/.test(patologias);
@@ -751,11 +760,12 @@ function nutritionWeightEntries(resident) {
     initial: true
   }] : [];
   const controls = REGISTROS_NUTRI
-    .filter((row) => row.residente === resident.nombre && parsePesoNumber(row.peso))
+    .filter((row) => residentRecordMatches(row, resident) && parsePesoNumber(row.peso))
     .map((row) => ({
       fecha: formatRegistroDateOnly(row.fecha),
       label: formatRegistroDateOnly(row.fecha),
       peso: parsePesoNumber(row.peso),
+      regimen: row.observacion || "Sin observaciones.",
       initial: false
     }));
   return [...initial, ...controls].sort((a, b) => parseAnyDate(a.fecha) - parseAnyDate(b.fecha));
@@ -2492,7 +2502,7 @@ function dashboardTabContent(r) {
     return medicamentosTable(r);
   }
   if (state.dashboardTab === "nutricion") {
-    return pesoMensualCard(r) + `<div class="timeline"><b>Nutricion</b><p>Ultimo IMC registrado: 22.4. Mantener indicaciones.</p></div>`;
+    return pesoMensualCard(r) + latestNutritionTimeline(r);
   }
   if (state.dashboardTab === "alertas") {
     return residentAlerts(r);
@@ -2512,10 +2522,63 @@ function renderGraficasCam(resident) {
     ${pesoMensualCard(resident)}`;
 }
 
+function latestNutritionTimeline(resident) {
+  const latest = REGISTROS_NUTRI
+    .filter((registro) => residentRecordMatches(registro, resident))
+    .sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha))[0];
+  if (!latest) {
+    return `<div class="timeline"><b>Nutricion</b><p>Sin registros nutricionales para este residente.</p></div>`;
+  }
+  return `<div class="timeline timeline-nutri">
+    <b>${formatRegistroDateOnly(latest.fecha)} | Nutricion</b>
+    <p><b>Peso:</b> ${formatPesoValue(latest.peso)}. <b>IMC:</b> ${formatImcText(latest.imc)}. ${latest.observacion || "Sin observaciones."}</p>
+  </div>`;
+}
+
 function ultimosControlesSemana(resident) {
-  return CONTROLES_CICLOS
-    .filter((row) => row.residente === resident.nombre)
+  return cycleControlsForResident(resident)
     .slice(-CONTROL_PUNTOS_GRAFICA);
+}
+
+function cycleControlsForResident(resident) {
+  const staticRows = CONTROLES_CICLOS
+    .filter((row) => residentRecordMatches(row, resident))
+    .map((row) => ({ ...row, sourceKey: `static-${row.fecha}-${row.origen || ""}` }));
+  const recordRows = [...REGISTROS_CAM, ...REGISTROS_PRO]
+    .filter((row) => residentRecordMatches(row, resident))
+    .filter((row) => recordHasCycles(row))
+    .map(cycleControlFromRegistro)
+    .filter(Boolean);
+  const byKey = new Map();
+  [...staticRows, ...recordRows].forEach((row) => {
+    const key = `${row.fecha}|${row.residente}|${row.origen || ""}`;
+    byKey.set(key, row);
+  });
+  return [...byKey.values()]
+    .sort((a, b) => parseRegistroDate(a.fecha) - parseRegistroDate(b.fecha));
+}
+
+function cycleControlFromRegistro(row) {
+  const detail = recordText(row);
+  const values = {
+    temp: row.cicloTemp || regexValue(detail, /Temp\s+([\d,.]+)/i),
+    spo2: row.cicloSpo2 || regexValue(detail, /Sat\s+(\d+)/i),
+    pa: row.cicloPa || regexValue(detail, /PA\s+(\d+\/\d+)/i),
+    hgt: row.cicloHgt || regexValue(detail, /HGT\s+(\d+)/i)
+  };
+  if (![values.temp, values.spo2, values.pa, values.hgt].some(Boolean)) return null;
+  const pressure = parsePressure(values.pa);
+  return {
+    residente: row.residente,
+    fecha: row.fecha,
+    temp: parseDecimalValue(values.temp),
+    spo2: Number(values.spo2),
+    pad: pressure.diastolica,
+    hgt: values.hgt ? Number(values.hgt) : null,
+    origen: row.rol || row.tipo || "CAM",
+    usuario: row.usuario || row.rol || usuarioCamPorTurno(row.turno),
+    observacion: row.registro || row.detalle || "Control de ciclos registrado."
+  };
 }
 
 function chartCard(config, data, key) {
@@ -2629,7 +2692,7 @@ function chartTicks(min, max, count) {
 }
 
 function pesoMensualCard(resident) {
-  const pesos = CONTROLES_PESO.filter((row) => row.residente === resident.nombre);
+  const pesos = nutritionWeightEntries(resident);
   const ultimo = pesos[pesos.length - 1];
   return `<div class="card table-wrap">
     <h2>Control De Peso</h2>
@@ -2637,9 +2700,9 @@ function pesoMensualCard(resident) {
     ${pesoChart(pesos)}
     <table>
       <thead><tr><th>Fecha control</th><th>Peso</th><th>Minuta / regimen indicado</th></tr></thead>
-      <tbody>${pesos.map((row) => `<tr><td>${row.fecha}</td><td>${formatDecimalText(row.peso)} kg</td><td>${row.regimen}</td></tr>`).join("")}</tbody>
+      <tbody>${pesos.map((row) => `<tr><td>${row.fecha}</td><td>${formatDecimalText(row.peso)} kg</td><td>${row.regimen || (row.initial ? "Peso inicial de ingreso" : "Sin observaciones.")}</td></tr>`).join("")}</tbody>
     </table>
-    ${ultimo ? `<p><b>Ultima indicacion:</b> ${ultimo.regimen}</p>` : ""}
+    ${ultimo ? `<p><b>Ultima indicacion:</b> ${ultimo.regimen || (ultimo.initial ? "Peso inicial de ingreso" : "Sin observaciones.")}</p>` : ""}
   </div>`;
 }
 
@@ -2759,7 +2822,7 @@ function bitacoraResidente(resident) {
     : `<div class="notice">Sin registros para el periodo seleccionado en esta maqueta.</div>`;
   return `<div class="card">
     <h2>Bitacora resumen de registros</h2>
-    <div class="notice">Incluye ultimos 7 dias: Directora Tecnica y Enfermero. De cuidadoras solo muestra administracion de medicamentos o registros asociados a alertas. Nutricionista muestra su ultimo registro mensual. Orden: fecha decreciente.</div>
+    <div class="notice">Incluye ultimos 7 dias: registros CAM, Directora Tecnica y Enfermero. Nutricionista muestra su ultimo registro mensual. Orden: fecha decreciente.</div>
     ${content}
   </div>`;
 }
@@ -2768,8 +2831,7 @@ function bitacoraResumenEntries(resident) {
   const today = dashboardReferenceDate();
   const limit = daysBefore(today, 7);
   const camEntries = REGISTROS_CAM
-    .filter((registro) => registro.residente === resident.nombre && parseRegistroDate(registro.fecha) >= limit && parseRegistroDate(registro.fecha) <= today)
-    .filter((registro) => camRegistroEjecutivo(registro))
+    .filter((registro) => residentRecordMatches(registro, resident) && parseRegistroDate(registro.fecha) >= limit && parseRegistroDate(registro.fecha) <= today)
     .map((registro) => ({
       fecha: registro.fecha,
       date: parseRegistroDate(registro.fecha),
@@ -2778,7 +2840,7 @@ function bitacoraResumenEntries(resident) {
       clase: "timeline-cam"
     }));
   const profesionalEntries = REGISTROS_PRO
-    .filter((registro) => registro.residente === resident.nombre && parseRegistroDate(registro.fecha) >= limit && parseRegistroDate(registro.fecha) <= today)
+    .filter((registro) => residentRecordMatches(registro, resident) && parseRegistroDate(registro.fecha) >= limit && parseRegistroDate(registro.fecha) <= today)
     .map((registro) => ({
       fecha: registro.fecha,
       date: parseRegistroDate(registro.fecha),
@@ -2787,13 +2849,13 @@ function bitacoraResumenEntries(resident) {
       clase: registro.rol === "Enfermero" ? "timeline-enfermero" : "timeline-dt"
     }));
   const ultimoNutri = REGISTROS_NUTRI
-    .filter((registro) => registro.residente === resident.nombre && parseRegistroDate(registro.fecha) <= today)
+    .filter((registro) => residentRecordMatches(registro, resident) && parseRegistroDate(registro.fecha) <= today)
     .sort((a, b) => parseRegistroDate(b.fecha) - parseRegistroDate(a.fecha))[0];
   const nutriEntries = ultimoNutri ? [{
       fecha: ultimoNutri.fecha,
       date: parseRegistroDate(ultimoNutri.fecha),
       tipo: "Nutricionista",
-      detalle: `<b>IMC:</b> ${ultimoNutri.imc}. ${ultimoNutri.observacion}`,
+      detalle: `<b>Peso:</b> ${formatPesoValue(ultimoNutri.peso)}. <b>IMC:</b> ${formatImcText(ultimoNutri.imc)}. ${ultimoNutri.observacion}`,
       clase: "timeline-nutri"
     }] : [];
   return [...camEntries, ...profesionalEntries, ...nutriEntries]
@@ -2801,7 +2863,7 @@ function bitacoraResumenEntries(resident) {
 }
 
 function dashboardReferenceDate() {
-  return new Date(2026, 5, 14, 23, 59);
+  return new Date();
 }
 
 function camRegistroEjecutivo(registro) {
@@ -4136,15 +4198,15 @@ function pdfAlertsPreview(resident, days) {
 }
 
 function reportData(resident, days) {
-  const today = new Date(2026, 5, 14, 23, 59);
+  const today = new Date();
   const start = daysBefore(today, days);
   const inPeriod = (row) => parseRegistroDate(row.fecha) >= start && parseRegistroDate(row.fecha) <= today;
-  const cam = REGISTROS_CAM.filter((row) => row.residente === resident.nombre && inPeriod(row));
+  const cam = REGISTROS_CAM.filter((row) => residentRecordMatches(row, resident) && inPeriod(row));
   const camEjecutivo = cam.filter((row) => camRegistroEjecutivo(row));
-  const pro = REGISTROS_PRO.filter((row) => row.residente === resident.nombre && inPeriod(row));
-  const nutri = REGISTROS_NUTRI.filter((row) => row.residente === resident.nombre && inPeriod(row));
-  const controles = CONTROLES_CICLOS
-    .filter((row) => row.residente === resident.nombre && inPeriod(row))
+  const pro = REGISTROS_PRO.filter((row) => residentRecordMatches(row, resident) && inPeriod(row));
+  const nutri = REGISTROS_NUTRI.filter((row) => residentRecordMatches(row, resident) && inPeriod(row));
+  const controles = cycleControlsForResident(resident)
+    .filter((row) => inPeriod(row))
     .sort((a, b) => parseRegistroDate(a.fecha) - parseRegistroDate(b.fecha));
   const medicamentos = [...cam, ...pro]
     .filter((row) => recordHasMedication(row))
