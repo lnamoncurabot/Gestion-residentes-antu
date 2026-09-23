@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { crearRegistro, eliminarRegistro, listarRegistros } from "../services/registros.service.js";
+import { actualizarRegistro, crearRegistro, eliminarRegistro, listarRegistros } from "../services/registros.service.js";
 
 export const registrosRouter = Router();
 
@@ -15,6 +15,16 @@ registrosRouter.post("/", async (req, res, next) => {
   try {
     const registro = await crearRegistro(req.body);
     res.status(201).json(registro);
+  } catch (error) {
+    next(error);
+  }
+});
+
+registrosRouter.put("/:origen/:id", async (req, res, next) => {
+  try {
+    const origen = req.params.origen as "cam" | "pro" | "nutri";
+    const id = Number(req.params.id);
+    res.json(await actualizarRegistro(origen, id, req.body));
   } catch (error) {
     next(error);
   }

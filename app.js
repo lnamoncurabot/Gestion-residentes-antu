@@ -230,6 +230,14 @@ async function persistRegistro(origen, resident, registro) {
   return { ...registro, id: saved.id };
 }
 
+async function updateRegistro(source, resident, registro) {
+  if (!registro?.id) return { ok: true, ...registro };
+  return apiRequest(`/registros/${source}/${registro.id}`, {
+    method: "PUT",
+    body: JSON.stringify(registroToApiPayload(source, resident, registro))
+  });
+}
+
 async function deleteRegistroFromApi(source, row) {
   if (!row?.id) return { ok: true };
   return apiRequest(`/registros/${source}/${row.id}`, { method: "DELETE" });
@@ -637,6 +645,10 @@ function normalizedText(value) {
 
 function residentRecordMatches(row, resident) {
   return normalizedText(row?.residente).trim() === normalizedText(resident?.nombre).trim();
+}
+
+function residentForRecord(row) {
+  return RESIDENTES.find((resident) => residentRecordMatches(row, resident)) || selectedResident();
 }
 
 function residentRequiresHgt(resident) {
@@ -3455,21 +3467,31 @@ function renderNutriRecordForm(row, index, returnView = "registros", readOnly = 
 }
 
 function saveNutriRecordEdit(index) {
-  openModal("Confirmar edicion", "Desea guardar los cambios de este registro nutricional?", () => {
+  openModal("Confirmar edicion", "Desea guardar los cambios de este registro nutricional?", async () => {
     const row = REGISTROS_NUTRI[index];
-    row.fecha = $("editNutriFecha").value;
-    row.peso = $("editNutriPeso").value || row.peso;
-    row.talla = $("editNutriTalla").value;
-    row.imc = $("editNutriImc").value || "-";
-    row.cc = $("editNutriCc").value;
-    row.cb = $("editNutriCb").value;
-    row.pt = $("editNutriPt").value;
-    row.cp = $("editNutriCp").value;
-    row.observacion = $("editNutriObs").value || "Sin observaciones.";
-    row.editable = true;
-    state.view = state.editReturnView || "registros";
-    renderShell();
-    openRegistroGuardadoModal();
+    const updated = {
+      ...row,
+      fecha: $("editNutriFecha").value,
+      peso: $("editNutriPeso").value || row.peso,
+      talla: $("editNutriTalla").value,
+      imc: $("editNutriImc").value || "-",
+      cc: $("editNutriCc").value,
+      cb: $("editNutriCb").value,
+      pt: $("editNutriPt").value,
+      cp: $("editNutriCp").value,
+      observacion: $("editNutriObs").value || "Sin observaciones.",
+      editable: true
+    };
+    try {
+      await updateRegistro("nutri", residentForRecord(updated), updated);
+      REGISTROS_NUTRI[index] = updated;
+      await loadRegistrosFromApi();
+      state.view = state.editReturnView || "registros";
+      renderShell();
+      openRegistroGuardadoModal();
+    } catch (error) {
+      openModal("No se pudo guardar", `El registro nutricional no fue actualizado en la base de datos. Detalle: ${error.message}`);
+    }
   });
 }
 

@@ -25,12 +25,14 @@ type RegistroPayload = {
   datos?: Record<string, unknown>;
 };
 
+type RegistroOrigen = RegistroPayload["origen"];
+
 function mysqlDateTime(value: string) {
   const normalized = String(value || "").replace("T", " ").slice(0, 16);
   return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(normalized) ? `${normalized}:00` : null;
 }
 
-function parseDecimal(value?: string) {
+function parseDecimal(value?: string | number | null) {
   const text = String(value || "").replace(",", ".");
   const match = text.match(/\d+(\.\d+)?/);
   return match ? Number(match[0]) : null;
@@ -211,7 +213,92 @@ export async function crearRegistro(payload: RegistroPayload) {
   }
 }
 
-export async function eliminarRegistro(origen: RegistroPayload["origen"], id: number) {
+export async function actualizarRegistro(origen: RegistroOrigen, id: number, payload: RegistroPayload) {
+  if (!id) {
+    throw new Error("Debe indicar un registro valido para actualizar.");
+  }
+
+  const usuarioId = payload.usuario_email ? await usuarioIdPorEmail(payload.usuario_email) : null;
+  const fechaHora = payload.fecha_hora ? mysqlDateTime(payload.fecha_hora) : null;
+
+  if (origen === "nutri") {
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE registros_nutricion
+       SET fecha_hora = COALESCE(:fechaHora, fecha_hora),
+           usuario_id = COALESCE(:usuarioId, usuario_id),
+           peso_kg = :peso,
+           talla_m = :talla,
+           imc = :imc,
+           observaciones = :observacion,
+           datos_json = :datos
+       WHERE id = :id`,
+      {
+        id,
+        fechaHora,
+        usuarioId,
+        peso: payload.peso_kg ?? null,
+        talla: payload.talla_m ?? null,
+        imc: parseDecimal(payload.imc),
+        observacion: payload.observacion || "Sin observaciones.",
+        datos: JSON.stringify(payload.datos || {})
+      }
+    );
+    if (!result.affectedRows) {
+      throw new Error("No se encontro el registro solicitado.");
+    }
+    return { id, origen, ...payload };
+  }
+
+  if (origen === "pro") {
+    const [result] = await pool.execute<ResultSetHeader>(
+      `UPDATE registros_profesionales
+       SET fecha_hora = COALESCE(:fechaHora, fecha_hora),
+           usuario_id = COALESCE(:usuarioId, usuario_id),
+           rol_profesional = :rol,
+           evolucion = :registro,
+           datos_json = :datos
+       WHERE id = :id`,
+      {
+        id,
+        fechaHora,
+        usuarioId,
+        rol: payload.rol || "Enfermero",
+        registro: payload.registro || "Registro sin detalle.",
+        datos: JSON.stringify(payload.datos || {})
+      }
+    );
+    if (!result.affectedRows) {
+      throw new Error("No se encontro el registro solicitado.");
+    }
+    return { id, origen, ...payload };
+  }
+
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE registros_cam
+     SET fecha_hora = COALESCE(:fechaHora, fecha_hora),
+         usuario_id = COALESCE(:usuarioId, usuario_id),
+         turno = :turno,
+         nombre_cuidadora = :cuidadora,
+         tipo_registro = :tipo,
+         observaciones = :detalle
+     WHERE id = :id`,
+    {
+      id,
+      fechaHora,
+      usuarioId,
+      turno: payload.turno || "Dia",
+      cuidadora: payload.cuidadora || "Sin cuidadora informada",
+      tipo: payload.tipo || "Registro CAM",
+      detalle: payload.detalle || ""
+    }
+  );
+  if (!result.affectedRows) {
+    throw new Error("No se encontro el registro solicitado.");
+  }
+  return { id, origen, ...payload };
+}
+
+export async function eliminarRegistro(origen: RegistroOrigen, id: number) {
   const tableByOrigin = {
     cam: "registros_cam",
     pro: "registros_profesionales",
